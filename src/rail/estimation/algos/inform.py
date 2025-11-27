@@ -138,6 +138,7 @@ vmap_neg_llik_ = vmap(
 
 class ShireInformer(CatInformer):
     name = "ShireInformer"
+    entrypoint_function = "inform"  # the user-facing science function for this class
     outputs = [("model", ModelHandle), ("templates", TableHandle)]
     config_options = CatInformer.config_options.copy()
     config_options.update(

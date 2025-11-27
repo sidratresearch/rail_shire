@@ -47,6 +47,7 @@ class ShireEstimator(CatEstimator):
     """
 
     name = "ShireEstimator"
+    entrypoint_function = "estimate"  # the user-facing science function for this class
     inputs = [
         ("model", ModelHandle),
         ("input", TableHandle),
