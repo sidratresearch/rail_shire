@@ -22,13 +22,13 @@
 #
 
 import jax
-import pandas as pd
 import numpy as np
-from jax import numpy as jnp
-from rail.dsps import DEFAULT_COSMOLOGY
-from dsps.cosmology import luminosity_distance_to_z
+import pandas as pd
 from astropy import constants as const
 from astropy import units as u
+from dsps.cosmology import luminosity_distance_to_z
+from jax import numpy as jnp
+from rail.dsps import DEFAULT_COSMOLOGY
 
 try:
     from jax.numpy import trapezoid
@@ -38,11 +38,16 @@ except ImportError:
     except ImportError:
         from jax.numpy import trapz as trapezoid
 
-
 from .dsps_params import SSPParametersFit
 
 _DUMMY_PARS = SSPParametersFit()
-PARS_DF = pd.DataFrame(index=_DUMMY_PARS.PARAM_NAMES_FLAT, columns=["INIT", "MIN", "MAX"], data=jnp.column_stack((_DUMMY_PARS.INIT_PARAMS, _DUMMY_PARS.PARAMS_MIN, _DUMMY_PARS.PARAMS_MAX)))
+PARS_DF = pd.DataFrame(
+    index=_DUMMY_PARS.PARAM_NAMES_FLAT,
+    columns=["INIT", "MIN", "MAX"],
+    data=jnp.column_stack(
+        (_DUMMY_PARS.INIT_PARAMS, _DUMMY_PARS.PARAMS_MIN, _DUMMY_PARS.PARAMS_MAX)
+    ),
+)
 INIT_PARAMS = jnp.array(PARS_DF["INIT"])
 PARAMS_MIN = jnp.array(PARS_DF["MIN"])
 PARAMS_MAX = jnp.array(PARS_DF["MAX"])
@@ -149,7 +154,9 @@ def convertFnuToFlambda(wl, fnu):
     Compute Flambda = Fnu / (wl**2/c)
     check the conversion units with astropy units and constants
     """
-    flambda = (fnu * U_FNU * const.c / ((wl * u.AA) ** 2)).to(U_FL).value  # / (1 * U_FL)
+    flambda = (
+        (fnu * U_FNU * const.c / ((wl * u.AA) ** 2)).to(U_FL).value
+    )  # / (1 * U_FL)
     return flambda
 
 
@@ -295,6 +302,7 @@ def flam_to_lsunPerHz(wl, flam, zob):
     fsun = fnu_to_lsunPerHz(fnu, zob)
     return fsun
 
+
 @jax.jit
 def _cdf(z, pdz):
     cdf = jnp.array([trapezoid(pdz[:i], x=z[:i]) for i in range(len(z))])
@@ -314,5 +322,6 @@ vmap_median = jax.vmap(_median, in_axes=(None, 1))
 @jax.jit
 def _mean(z, pdz):
     return trapezoid(z * pdz, x=z)
+
 
 vmap_mean = jax.vmap(_mean, in_axes=(None, 1))

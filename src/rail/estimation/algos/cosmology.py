@@ -34,7 +34,9 @@ hc = 12398.42  # [eV.A]
 f_ga = 1
 
 Cosmo = namedtuple("Cosmo", ["h0", "om0", "l0", "omt"])
-PriorParams = namedtuple("PriorParams", ["mod", "zot", "kt", "alpt0", "pcal", "ktf", "ft", "nuv_range"])
+PriorParams = namedtuple(
+    "PriorParams", ["mod", "zot", "kt", "alpt0", "pcal", "ktf", "ft", "nuv_range"]
+)
 
 # P(T|m0)
 ktf = jnp.array([0.47165, 0.30663, 0.12715, -0.34437])
@@ -50,7 +52,9 @@ prior_params_set = (
     PriorParams(3, 0.20418, 0.13773, 1.34500, pcal[3], ktf[3], ft[3], (-jnp.inf, 1.9)),
 )
 
-prior_pars_E_S0, prior_pars_Sbc, prior_pars_Scd, prior_pars_Irr = prior_params_set  # noqa: N816
+prior_pars_E_S0, prior_pars_Sbc, prior_pars_Scd, prior_pars_Irr = (
+    prior_params_set  # noqa: N816
+)
 
 
 @jit
@@ -64,9 +68,12 @@ def prior_mod(nuvk):
     """
     val = (
         prior_pars_Irr.mod
-        + (prior_pars_Scd.mod - prior_pars_Irr.mod) * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
-        + (prior_pars_Sbc.mod - prior_pars_Scd.mod) * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
-        + (prior_pars_E_S0.mod - prior_pars_Sbc.mod) * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
+        + (prior_pars_Scd.mod - prior_pars_Irr.mod)
+        * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
+        + (prior_pars_Sbc.mod - prior_pars_Scd.mod)
+        * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
+        + (prior_pars_E_S0.mod - prior_pars_Sbc.mod)
+        * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
     )
     return val.astype(int)
 
@@ -82,9 +89,12 @@ def prior_zot(nuvk):
     """
     val = (
         prior_pars_Irr.zot
-        + (prior_pars_Scd.zot - prior_pars_Irr.zot) * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
-        + (prior_pars_Sbc.zot - prior_pars_Scd.zot) * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
-        + (prior_pars_E_S0.zot - prior_pars_Sbc.zot) * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
+        + (prior_pars_Scd.zot - prior_pars_Irr.zot)
+        * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
+        + (prior_pars_Sbc.zot - prior_pars_Scd.zot)
+        * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
+        + (prior_pars_E_S0.zot - prior_pars_Sbc.zot)
+        * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
     )
     return val
 
@@ -100,9 +110,12 @@ def prior_alpt0(nuvk):
     """
     val = (
         prior_pars_Irr.alpt0
-        + (prior_pars_Scd.alpt0 - prior_pars_Irr.alpt0) * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
-        + (prior_pars_Sbc.alpt0 - prior_pars_Scd.alpt0) * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
-        + (prior_pars_E_S0.alpt0 - prior_pars_Sbc.alpt0) * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
+        + (prior_pars_Scd.alpt0 - prior_pars_Irr.alpt0)
+        * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
+        + (prior_pars_Sbc.alpt0 - prior_pars_Scd.alpt0)
+        * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
+        + (prior_pars_E_S0.alpt0 - prior_pars_Sbc.alpt0)
+        * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
     )
     return val
 
@@ -118,9 +131,12 @@ def prior_kt(nuvk):
     """
     val = (
         prior_pars_Irr.kt
-        + (prior_pars_Scd.kt - prior_pars_Irr.kt) * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
-        + (prior_pars_Sbc.kt - prior_pars_Scd.kt) * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
-        + (prior_pars_E_S0.kt - prior_pars_Sbc.kt) * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
+        + (prior_pars_Scd.kt - prior_pars_Irr.kt)
+        * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
+        + (prior_pars_Sbc.kt - prior_pars_Scd.kt)
+        * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
+        + (prior_pars_E_S0.kt - prior_pars_Sbc.kt)
+        * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
     )
     return val
 
@@ -136,9 +152,12 @@ def prior_pcal(nuvk):
     """
     val = (
         prior_pars_Irr.pcal
-        + (prior_pars_Scd.pcal - prior_pars_Irr.pcal) * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
-        + (prior_pars_Sbc.pcal - prior_pars_Scd.pcal) * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
-        + (prior_pars_E_S0.pcal - prior_pars_Sbc.pcal) * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
+        + (prior_pars_Scd.pcal - prior_pars_Irr.pcal)
+        * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
+        + (prior_pars_Sbc.pcal - prior_pars_Scd.pcal)
+        * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
+        + (prior_pars_E_S0.pcal - prior_pars_Sbc.pcal)
+        * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
     )
     return val
 
@@ -154,9 +173,12 @@ def prior_ktf(nuvk):
     """
     val = (
         prior_pars_Irr.mod
-        + (prior_pars_Scd.ktf - prior_pars_Irr.ktf) * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
-        + (prior_pars_Sbc.ktf - prior_pars_Scd.ktf) * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
-        + (prior_pars_E_S0.ktf - prior_pars_Sbc.ktf) * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
+        + (prior_pars_Scd.ktf - prior_pars_Irr.ktf)
+        * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
+        + (prior_pars_Sbc.ktf - prior_pars_Scd.ktf)
+        * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
+        + (prior_pars_E_S0.ktf - prior_pars_Sbc.ktf)
+        * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
     )
     return val
 
@@ -172,9 +194,12 @@ def prior_ft(nuvk):
     """
     val = (
         prior_pars_Irr.mod
-        + (prior_pars_Scd.ft - prior_pars_Irr.ft) * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
-        + (prior_pars_Sbc.ft - prior_pars_Scd.ft) * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
-        + (prior_pars_E_S0.ft - prior_pars_Sbc.ft) * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
+        + (prior_pars_Scd.ft - prior_pars_Irr.ft)
+        * jnp.heaviside(nuvk - prior_pars_Scd.nuv_range[0], 0)
+        + (prior_pars_Sbc.ft - prior_pars_Scd.ft)
+        * jnp.heaviside(nuvk - prior_pars_Sbc.nuv_range[0], 0)
+        + (prior_pars_E_S0.ft - prior_pars_Sbc.ft)
+        * jnp.heaviside(nuvk - prior_pars_E_S0.nuv_range[0], 0)
     )
     return val
 
@@ -208,7 +233,14 @@ def distMet(cosmo, z):
         # _sum = 0.
         dz = z / 50.0
         zi = jnp.linspace(0.5 * dz, z, num=50)
-        Ez = jnp.power((cosmo.om0 * jnp.power((1.0 + zi), 3.0) + (1 - cosmo.om0 - cosmo.l0) * jnp.power((1.0 + zi), 2.0) + cosmo.l0), -0.5)
+        Ez = jnp.power(
+            (
+                cosmo.om0 * jnp.power((1.0 + zi), 3.0)
+                + (1 - cosmo.om0 - cosmo.l0) * jnp.power((1.0 + zi), 2.0)
+                + cosmo.l0
+            ),
+            -0.5,
+        )
         _sum = trapezoid(Ez, zi)
         # for i in range(50):
         #    zi = (i+0.5)*dz
@@ -216,7 +248,9 @@ def distMet(cosmo, z):
         #    _sum = _sum + dz/Ez
         dmet = ckms / (cosmo.h0 * ao) * _sum
     else:
-        raise RuntimeError(f"Cosmology not included : h0={cosmo.h0}, Om0={cosmo.om0}, l0={cosmo.l0}")
+        raise RuntimeError(
+            f"Cosmology not included : h0={cosmo.h0}, Om0={cosmo.om0}, l0={cosmo.l0}"
+        )
     return dmet
 
 
@@ -291,13 +325,19 @@ def time(cosmo, z):
         timy = 1.0 / (hy * (1 + z))
     elif cosmo.om0 < 1 and cosmo.om0 > 0 and cosmo.l0 == 0:
         val = (cosmo.om0 * z - cosmo.om0 + 2.0) / (cosmo.om0 * (1 + z))
-        timy = 2.0 * jnp.sqrt((1 - cosmo.om0) * (cosmo.om0 * z + 1)) / (cosmo.om0 * (1 + z))
+        timy = (
+            2.0
+            * jnp.sqrt((1 - cosmo.om0) * (cosmo.om0 * z + 1))
+            / (cosmo.om0 * (1 + z))
+        )
         timy = timy - jnp.log10(val + jnp.sqrt(val * val - 1))
         timy = timy * cosmo.om0 / (2.0 * hy * jnp.power((1 - cosmo.om0), 1.5))
 
     elif cosmo.om0 > 1 and cosmo.l0 == 0:
         timy = jnp.arccos((cosmo.om0 * z - cosmo.om0 + 2.0) / (cosmo.om0 * (1 + z)))
-        timy = timy - 2 * jnp.sqrt((cosmo.om0 - 1) * (cosmo.om0 * z + 1)) / (cosmo.om0 * (1 + z))
+        timy = timy - 2 * jnp.sqrt((cosmo.om0 - 1) * (cosmo.om0 * z + 1)) / (
+            cosmo.om0 * (1 + z)
+        )
         timy = timy * cosmo.om0 / (2 * hy * jnp.power((cosmo.om0 - 1), 1.5))
 
     elif cosmo.om0 < 1 and jnp.abs(cosmo.om0 + cosmo.l0 - 1) < 1.0e-5:
@@ -347,7 +387,11 @@ def calc_distLum(cosm, z):
     :return: Luminosity distance un Mpc
     :rtype: float
     """
-    return (1.0 + z) * jc.background.radial_comoving_distance(cosm, jc.utils.z2a(z)) / cosm.h
+    return (
+        (1.0 + z)
+        * jc.background.radial_comoving_distance(cosm, jc.utils.z2a(z))
+        / cosm.h
+    )
 
 
 # @partial(jit, static_argnums=0)
@@ -424,21 +468,21 @@ def nz_prior_params(nuvk):
 
 @jit
 def nz_prior_fracs(imag, m0, ktf_m, ft_m):
-    kk = imag-m0
+    kk = imag - m0
     # Ratio for each type
-    rappSum = jnp.sum(ft*jnp.exp(-ktf*kk))
-    rapp = ft_m*jnp.exp(-ktf_m*kk)
-    return rapp/rappSum
+    rappSum = jnp.sum(ft * jnp.exp(-ktf * kk))
+    rapp = ft_m * jnp.exp(-ktf_m * kk)
+    return rapp / rappSum
 
 
 @jit
 def dndz_prior(z, imag, m0, alpt0, zot, kt, cal):
-    kk = imag-m0
-    zmax = zot + kt*kk
-    pz = jnp.power(z, alpt0) * jnp.exp( -jnp.power( (z/zmax), alpt0 ) )
+    kk = imag - m0
+    zmax = zot + kt * kk
+    pz = jnp.power(z, alpt0) * jnp.exp(-jnp.power((z / zmax), alpt0))
     # Normalisation of the probability function
-    _pcal = jnp.power(zot + kt*kk, alpt0+1) / alpt0*cal
-    return pz/_pcal
+    _pcal = jnp.power(zot + kt * kk, alpt0 + 1) / alpt0 * cal
+    return pz / _pcal
 
 
 @jit
@@ -467,8 +511,11 @@ def nz_prior_core(z, imag, m0, alpt0, zot, kt, cal, ktf_m, ft_m):
     :rtype: float
     """
     # Final value
-    val = dndz_prior(z, imag, m0, alpt0, zot, kt, cal) * nz_prior_fracs(imag, m0, ktf_m, ft_m)
+    val = dndz_prior(z, imag, m0, alpt0, zot, kt, cal) * nz_prior_fracs(
+        imag, m0, ktf_m, ft_m
+    )
     return val
+
 
 """E(B-V) prior not in use
 ebv_prior_file = os.path.join(DATALOC, 'NoType_NoLaw_ebv_prior_dataframe_fromFORS2.pkl') #'NoType_ebv_prior_dataframe_fromFORS2.pkl'  #'BothExt_ebv_prior_dataframe_fromFORS2.pkl'

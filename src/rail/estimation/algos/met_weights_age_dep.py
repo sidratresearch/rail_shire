@@ -1,7 +1,12 @@
 """
 Age-dependant metallicity helpers from Andrew Hearin ; January 2024
 """
-from dsps import calc_lgmet_weights_from_lognormal_mdf, calc_age_weights_from_sfh_table, cumulative_mstar_formed
+
+from dsps import (
+    calc_age_weights_from_sfh_table,
+    calc_lgmet_weights_from_lognormal_mdf,
+    cumulative_mstar_formed,
+)
 from dsps.sed.ssp_weights import SSPWeights
 from dsps.sed.stellar_sed import RestSED
 from dsps.utils import _tw_sigmoid
@@ -13,20 +18,30 @@ LGAGE_CRIT_YR, LGAGE_CRIT_H = 8.0, 1.0
 
 
 @jjit
-def _age_correlated_met_weights_kern(lg_ages_gyr, lgmet_young, lgmet_old, lgmet_scatter, ssp_lgmet):
+def _age_correlated_met_weights_kern(
+    lg_ages_gyr, lgmet_young, lgmet_old, lgmet_scatter, ssp_lgmet
+):
     lg_ages_yr = lg_ages_gyr + 9
     lgmet = _tw_sigmoid(lg_ages_yr, LGAGE_CRIT_YR, LGAGE_CRIT_H, lgmet_young, lgmet_old)
-    lgmet_weights = calc_lgmet_weights_from_lognormal_mdf(lgmet, lgmet_scatter, ssp_lgmet)
+    lgmet_weights = calc_lgmet_weights_from_lognormal_mdf(
+        lgmet, lgmet_scatter, ssp_lgmet
+    )
     return lgmet_weights
 
 
 # _a = (0, None, None, None, None)
-_age_correlated_met_weights_vmap = jjit(vmap(_age_correlated_met_weights_kern, in_axes=(0, None, None, None, None)))
+_age_correlated_met_weights_vmap = jjit(
+    vmap(_age_correlated_met_weights_kern, in_axes=(0, None, None, None, None))
+)
 
 
 @jjit
-def _get_age_correlated_met_weights(lg_ages_gyr, lgmet_young, lgmet_old, lgmet_scatter, ssp_lgmet):
-    lgmet_weights = _age_correlated_met_weights_vmap(lg_ages_gyr, lgmet_young, lgmet_old, lgmet_scatter, ssp_lgmet)
+def _get_age_correlated_met_weights(
+    lg_ages_gyr, lgmet_young, lgmet_old, lgmet_scatter, ssp_lgmet
+):
+    lgmet_weights = _age_correlated_met_weights_vmap(
+        lg_ages_gyr, lgmet_young, lgmet_old, lgmet_scatter, ssp_lgmet
+    )
     return lgmet_weights.T
 
 
@@ -80,9 +95,13 @@ def calc_ssp_weights_sfh_table_lognormal_mdf_agedep(
             SSP weights of the distribution of stellar age
 
     """
-    age_weights = calc_age_weights_from_sfh_table(gal_t_table, gal_sfh_table, ssp_lg_age_gyr, t_obs)
+    age_weights = calc_age_weights_from_sfh_table(
+        gal_t_table, gal_sfh_table, ssp_lg_age_gyr, t_obs
+    )
 
-    lgmet_weights = _get_age_correlated_met_weights(ssp_lg_age_gyr, lgmet_young, lgmet_old, lgmet_scatter, ssp_lgmet)
+    lgmet_weights = _get_age_correlated_met_weights(
+        ssp_lg_age_gyr, lgmet_young, lgmet_old, lgmet_scatter, ssp_lgmet
+    )
     weights = lgmet_weights * age_weights.reshape((1, -1))
 
     return SSPWeights(weights, lgmet_weights, age_weights)
@@ -162,7 +181,9 @@ def calc_rest_sed_sfh_table_lognormal_mdf_agedep(
     )
     weights, lgmet_weights, age_weights = ssp_weights
     n_met, n_ages = weights.shape
-    sed_unit_mstar = jnp.sum(ssp_flux * weights.reshape((n_met, n_ages, 1)), axis=(0, 1))
+    sed_unit_mstar = jnp.sum(
+        ssp_flux * weights.reshape((n_met, n_ages, 1)), axis=(0, 1)
+    )
 
     gal_mstar_table = cumulative_mstar_formed(gal_t_table, gal_sfr_table)
     gal_logsm_table = jnp.log10(gal_mstar_table)

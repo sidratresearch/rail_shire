@@ -1,81 +1,82 @@
 import os
-#import jax
-import numpy as np
 from collections import namedtuple
 from functools import partial
-from jax import numpy as jnp
-from jax import jit, vmap
-from jax.tree_util import tree_map
-from jax.scipy.special import gamma as jgamma
-#from jax.scipy.optimize import minimize as jmini
-import scipy.optimize as sciop
-#from jax import random as jrn
 
-import pandas as pd
-#import qp
-#from tqdm import tqdm
-#import tables_io
-from sklearn.ensemble import RandomForestClassifier
-from ceci.config import StageParameter as Param
-from rail.estimation.estimator import CatInformer
-#from rail.utils.path_utils import RAILDIR
-from rail.core.data import TableHandle, ModelHandle
-from rail.core.common_params import SHARED_PARAMS
-
-import matplotlib.pyplot as plt
+import matplotlib as mpl
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
-import matplotlib as mpl
-import seaborn as sns
+import matplotlib.pyplot as plt
 
-from .io_utils import load_ssp, istuple, SHIREDATALOC
-from .analysis import _DUMMY_PARS, PARS_DF, lsunPerHz_to_fnu_noU, C_KMS, convert_flux_toobsframe #, PARAMS_MAX, PARAMS_MIN, INIT_PARAMS
-from .template import (
-    #vmap_cols_zo,
-    #vmap_cols_zo_leg,
-    make_sps_templates,
-    make_sps_templates_noav,
-    make_legacy_templates,
-    make_legacy_templates_noav,
-    #colrs_bptrews_templ_zo_dusty,
-    #colrs_bptrews_templ_zo_dusty_leg,
-    lim_HII_comp,
-    lim_seyf_liner,
+# import jax
+import numpy as np
+import pandas as pd
+
+# from jax.scipy.optimize import minimize as jmini
+import scipy.optimize as sciop
+import seaborn as sns
+from ceci.config import StageParameter as Param
+from jax import jit
+from jax import numpy as jnp
+from jax import vmap
+from jax.scipy.special import gamma as jgamma
+from jax.tree_util import tree_map
+from rail.core.common_params import SHARED_PARAMS
+
+# from rail.utils.path_utils import RAILDIR
+from rail.core.data import ModelHandle, TableHandle
+from rail.estimation.estimator import CatInformer
+
+# import qp
+# from tqdm import tqdm
+# import tables_io
+from sklearn.ensemble import RandomForestClassifier
+
+from .analysis import (  # , PARAMS_MAX, PARAMS_MIN, INIT_PARAMS
+    _DUMMY_PARS,
+    C_KMS,
+    PARS_DF,
+    convert_flux_toobsframe,
+    lsunPerHz_to_fnu_noU,
+)
+from .filter import get_sedpy
+from .galaxy import val_neg_log_likelihood, vmap_mags_to_i_and_colors
+from .io_utils import SHIREDATALOC, istuple, load_ssp
+from .template import (  # vmap_cols_zo,; vmap_cols_zo_leg,; colrs_bptrews_templ_zo_dusty,; colrs_bptrews_templ_zo_dusty_leg,; v_d4000n_dusty,; calc_d4000n_dusty,; v_nuvk,; calc_nuvk,; vmap_bpt_rews,; vmap_bpt_rews_leg,; vmap_bpt_rews_dusty,; vmap_bpt_rews_dusty_leg,
     Ka03_nii,
     Ke01_nii,
     Ke01_oi,
     Ke01_sii,
     Ke06_oi,
     Ke06_sii,
-    vmap_mean_spectrum_nodust,
-    vmap_mean_spectrum,
-    v_d4000n,
-    #v_d4000n_dusty,
     calc_d4000n,
-    #calc_d4000n_dusty,
-    treemap_d4000,
-    treemap_d4000_noav,
-    treemap_d4000_leg,
-    treemap_d4000_noav_leg,
-    #v_nuvk,
-    v_nuvk_dusty,
-    #calc_nuvk,
     calc_nuvk_dusty,
-    mean_spectrum_nodust,
+    lim_HII_comp,
+    lim_seyf_liner,
+    make_legacy_templates,
+    make_legacy_templates_noav,
+    make_sps_templates,
+    make_sps_templates_noav,
     mean_spectrum,
-    vmap_calc_eqw,
-    #vmap_bpt_rews,
-    #vmap_bpt_rews_leg,
-    #vmap_bpt_rews_dusty,
-    #vmap_bpt_rews_dusty_leg,
+    mean_spectrum_nodust,
     treemap_bpt,
-    treemap_bpt_noav,
     treemap_bpt_leg,
-    treemap_bpt_noav_leg
+    treemap_bpt_noav,
+    treemap_bpt_noav_leg,
+    treemap_d4000,
+    treemap_d4000_leg,
+    treemap_d4000_noav,
+    treemap_d4000_noav_leg,
+    v_d4000n,
+    v_nuvk_dusty,
+    vmap_calc_eqw,
+    vmap_mean_spectrum,
+    vmap_mean_spectrum_nodust,
 )
-from .galaxy import val_neg_log_likelihood, vmap_mags_to_i_and_colors
-from .filter import get_sedpy
-#from .cosmology import prior_mod
+
+# from jax import random as jrn
+
+
+# from .cosmology import prior_mod
 try:
     from jax.numpy import trapezoid
 except ImportError:
@@ -84,52 +85,47 @@ except ImportError:
     except ImportError:
         from jax.numpy import trapz as trapezoid
 
-#jax.config.update("jax_enable_x64", True)
+# jax.config.update("jax_enable_x64", True)
 
-PriorParams = namedtuple("PriorParams", ["mod", "type", "fo", "kt", "z0", "alpha", "km", "m0", "nt", "nuv_range"])
+PriorParams = namedtuple(
+    "PriorParams",
+    ["mod", "type", "fo", "kt", "z0", "alpha", "km", "m0", "nt", "nuv_range"],
+)
+
 
 @jit
 def nz_func(mz, z0, alpha, km, m0):  # pragma: no cover
-    #z0, alpha, km = X
+    # z0, alpha, km = X
     mm, z = mz
-    m = jnp.where(mm<m0, m0, mm)
+    m = jnp.where(mm < m0, m0, mm)
     zm = z0 + (km * (m - m0))
-    vals = jnp.power(z, alpha) * jnp.exp(- jnp.power((z / zm), alpha))
-    Inorm = jnp.power(zm, alpha+1) * jgamma(1 + 1 / alpha) / alpha
+    vals = jnp.power(z, alpha) * jnp.exp(-jnp.power((z / zm), alpha))
+    Inorm = jnp.power(zm, alpha + 1) * jgamma(1 + 1 / alpha) / alpha
     return vals / Inorm
 
-vmap_dndz_gals = vmap(
-    nz_func,
-    in_axes=(0, None, None, None, None)
-)
+
+vmap_dndz_gals = vmap(nz_func, in_axes=(0, None, None, None, None))
 
 vmap_dndz = vmap(
-    vmap(
-        nz_func,
-        in_axes=(0, None, None, None, None)
-    ),
-    in_axes=(None, 0, 0, 0, 0)
+    vmap(nz_func, in_axes=(0, None, None, None, None)), in_axes=(None, 0, 0, 0, 0)
 )
 
 
 @jit
 def frac_func(X, m0, m):
     fo, kt = X
-    mm = jnp.where(m<m0, m0, m)
+    mm = jnp.where(m < m0, m0, m)
     return fo * jnp.exp(-kt * (mm - m0))
 
-_vmap_frac = vmap(
-    vmap(
-        frac_func,
-        in_axes=(None, None, 0)
-    ),
-    in_axes=(0, 0, None)
-)
+
+_vmap_frac = vmap(vmap(frac_func, in_axes=(None, None, 0)), in_axes=(0, 0, None))
+
 
 def vmap_frac(X, m0, m):
     _vals = _vmap_frac(X, m0, m)
     _sum = jnp.nansum(_vals, axis=0)
-    return _vals/_sum
+    return _vals / _sum
+
 
 vmap_neg_llik_ = vmap(
     vmap(
@@ -138,6 +134,7 @@ vmap_neg_llik_ = vmap(
     ),
     in_axes=(0, None, None),  # ... and for all redshifts
 )
+
 
 class ShireInformer(CatInformer):
     name = "ShireInformer"
@@ -157,69 +154,73 @@ class ShireInformer(CatInformer):
             str,
             "None",
             msg="data_path (str): file path to the "
-                "SSP, SED, FILTER, and AB directories.  If left to "
-                "default `None` it will use the install "
-                "directory for rail + rail/examples_data/estimation_data/data"
+            "SSP, SED, FILTER, and AB directories.  If left to "
+            "default `None` it will use the install "
+            "directory for rail + rail/examples_data/estimation_data/data",
         ),
         spectra_file=Param(
             str,
             "dsps_valid_fits_F2_GG_DESI_SM3.h5",
-            msg="name of the file specifying the set of galaxies from which to pick templates."
+            msg="name of the file specifying the set of galaxies from which to pick templates.",
         ),
         templ_type=Param(
             str,
             "SPS",
-            msg='Whether to use the "SPS" or "Legacy" method to derive the templates colours from the SPS parameters.'
+            msg='Whether to use the "SPS" or "Legacy" method to derive the templates colours from the SPS parameters.',
         ),
         ssp_file=Param(
             str,
             "ssp_data_fsps_v3.2_lgmet_age.h5",
-            msg="ssp_file (str): name of the h5 file that contains the SSP for use with DSPS."
+            msg="ssp_file (str): name of the h5 file that contains the SSP for use with DSPS.",
         ),
         filter_dict=Param(
             dict,
-            { f"{_n}_lsst": "filt_lsst" for _n in "ugrizy" },
-            msg='filter_dict (dict): Dictionary `{name: directory}` of the filters to be loaded with `sedpy`.'
-                'If `name` is available in `sedpy`, `directory` can be set to `None` or `""`.'
+            {f"{_n}_lsst": "filt_lsst" for _n in "ugrizy"},
+            msg="filter_dict (dict): Dictionary `{name: directory}` of the filters to be loaded with `sedpy`."
+            'If `name` is available in `sedpy`, `directory` can be set to `None` or `""`.',
         ),
         wlmin=Param(
             float,
-            100.,
-            msg='wlmin (float): lower bound of wavelength grid for filters interpolation'
+            100.0,
+            msg="wlmin (float): lower bound of wavelength grid for filters interpolation",
         ),
         wlmax=Param(
             float,
-            25000.,
-            msg='wlmax (float): upper bound of wavelength grid for filters interpolation'
+            25000.0,
+            msg="wlmax (float): upper bound of wavelength grid for filters interpolation",
         ),
         dwl=Param(
             float,
-            100.,
-            msg='dwl (float): step of wavelength grid for filters interpolation'
+            100.0,
+            msg="dwl (float): step of wavelength grid for filters interpolation",
         ),
         randomsel=Param(
             bool,
             False,
-            msg='randomsel (bool): whether to select a random sample of the galaxies in `spectra_file` instead of fitting it to training data colours.'
-                'In that case, `ntemplates` specifies the size of the random sample.'
+            msg="randomsel (bool): whether to select a random sample of the galaxies in `spectra_file` instead of fitting it to training data colours."
+            "In that case, `ntemplates` specifies the size of the random sample.",
         ),
         ntemplates=Param(
             int,
             50,
-            msg='ntemplates (int): maximum number of templates to keep, sorted by score -- there can be fewer templates if they represent 90% of the training sample.'
-                'If `randomsel` is `True`, this specifies the number of randomly selected galaxies to be used as templates.'
+            msg="ntemplates (int): maximum number of templates to keep, sorted by score -- there can be fewer templates if they represent 90% of the training sample."
+            "If `randomsel` is `True`, this specifies the number of randomly selected galaxies to be used as templates.",
         ),
         init_kt=Param(float, 0.3, msg="initial guess for kt in training"),
         init_z0=Param(float, 0.4, msg="initial guess for z0 in training"),
         init_m0=Param(float, 20, msg="initial guess for m0 in training"),
         init_alpha=Param(float, 1.8, msg="initial guess for alpha in training"),
         init_km=Param(float, 0.1, msg="initial guess for km in training"),
-        prior_type=Param(str, "NUVK", msg="Quantity to classify galaxies in broad types; must be one of 'NUVK' or 'BPT'."),
+        prior_type=Param(
+            str,
+            "NUVK",
+            msg="Quantity to classify galaxies in broad types; must be one of 'NUVK' or 'BPT'.",
+        ),
     )
 
     def __init__(self, args, **kwargs):
         super().__init__(args, **kwargs)
-        
+
         datapath = self.config["data_path"]
         if datapath is None or datapath == "None":
             self.data_path = SHIREDATALOC
@@ -227,8 +228,12 @@ class ShireInformer(CatInformer):
             self.data_path = datapath
             os.environ["SHIREDATALOC"] = self.data_path
         if not os.path.exists(self.data_path):  # pragma: no cover
-            raise FileNotFoundError("SHIREDATALOC " + self.data_path + " does not exist! Check value of data_path in config file!")
-        
+            raise FileNotFoundError(
+                "SHIREDATALOC "
+                + self.data_path
+                + " does not exist! Check value of data_path in config file!"
+            )
+
         self.m0 = None
         self.fo_arr = None
         self.kt_arr = None
@@ -239,27 +244,42 @@ class ShireInformer(CatInformer):
         self.szs = None
         self.pzs = None
         self.avs = jnp.linspace(
-            PARS_DF.loc["AV", "MIN"],
-            PARS_DF.loc["AV", "MAX"],
-            num=3,
-            endpoint=True
+            PARS_DF.loc["AV", "MIN"], PARS_DF.loc["AV", "MAX"], num=3, endpoint=True
         )
         self.prior_type = self.config.prior_type
-        self.refcategs = np.array(["E_S0", "Sbc/Scd", "Irr"]) if "nuvk" in self.config.prior_type.lower() else np.array(["Star-forming", "AGN", "Composite", "NC"])
+        self.refcategs = (
+            np.array(["E_S0", "Sbc/Scd", "Irr"])
+            if "nuvk" in self.config.prior_type.lower()
+            else np.array(["Star-forming", "AGN", "Composite", "NC"])
+        )
         self.ntyp = len(self.refcategs)
         self.nt_array = None
         self.besttypes = None
         self.templates_df = None
         self.filters_names = None
         self.color_names = None
-        self.e0_pars = PriorParams(0, "E_S0", None, None, None, None, None, None, None, (4.25, jnp.inf))
-        self.sbcd_pars = PriorParams(1, "Sbc/Scd", None, None, None, None, None, None, None, (1.9, 4.25))
-        self.irr_pars = PriorParams(2, "Irr", None, None, None, None, None, None, None, (-jnp.inf, 1.9))
+        self.e0_pars = PriorParams(
+            0, "E_S0", None, None, None, None, None, None, None, (4.25, jnp.inf)
+        )
+        self.sbcd_pars = PriorParams(
+            1, "Sbc/Scd", None, None, None, None, None, None, None, (1.9, 4.25)
+        )
+        self.irr_pars = PriorParams(
+            2, "Irr", None, None, None, None, None, None, None, (-jnp.inf, 1.9)
+        )
 
-        self.sf_pars = PriorParams(3, "Star-forming", None, None, None, None, None, None, None, None)
-        self.agn_pars = PriorParams(4, "AGN", None, None, None, None, None, None, None, None)
-        self.com_pars = PriorParams(5, "Composite", None, None, None, None, None, None, None, None)
-        self.nc_pars = PriorParams(6, "NC", None, None, None, None, None, None, None, None)
+        self.sf_pars = PriorParams(
+            3, "Star-forming", None, None, None, None, None, None, None, None
+        )
+        self.agn_pars = PriorParams(
+            4, "AGN", None, None, None, None, None, None, None, None
+        )
+        self.com_pars = PriorParams(
+            5, "Composite", None, None, None, None, None, None, None, None
+        )
+        self.nc_pars = PriorParams(
+            6, "NC", None, None, None, None, None, None, None, None
+        )
 
     '''
     @partial(jit, static_argnums=0)
@@ -278,8 +298,7 @@ class ShireInformer(CatInformer):
         )
         return val.astype(int)
     '''
-    
-    
+
     @partial(jit, static_argnums=0)
     def prior_mod(self, nuvk):
         """prior_mod Determines the model (galaxy morphology) for which to compute the prior value.
@@ -293,13 +312,10 @@ class ShireInformer(CatInformer):
             nuvk >= self.e0_pars.nuv_range[0],
             self.e0_pars.mod,
             jnp.where(
-                nuvk < self.irr_pars.nuv_range[1],
-                self.irr_pars.mod,
-                self.sbcd_pars.mod
-            )
+                nuvk < self.irr_pars.nuv_range[1], self.irr_pars.mod, self.sbcd_pars.mod
+            ),
         )
         return val.astype(int)
-
 
     def open_templates(self, **kwargs):
         """Load the templates parameters and attach them to this Estimator
@@ -330,7 +346,6 @@ class ShireInformer(CatInformer):
         self.templates_df = self.set_data("templates", templates)
         return self.templates_df
 
-
     def _load_training(self):
         if self.config.hdf5_groupname:
             training_data = self.get_data("input")[self.config.hdf5_groupname]
@@ -340,7 +355,9 @@ class ShireInformer(CatInformer):
         if self.config.ref_band not in training_data.keys():  # pragma: no cover
             raise KeyError(f"ref_band {self.config.ref_band} not found in input data!")
         if self.config.redshift_col not in training_data.keys():  # pragma: no cover
-            raise KeyError(f"redshift column {self.config.redshift_col} not found in input data!")
+            raise KeyError(
+                f"redshift column {self.config.redshift_col} not found in input data!"
+            )
 
         self.mags = jnp.column_stack(
             [training_data[f"mag_{_n}"] for _n in self.filters_names]
@@ -348,52 +365,45 @@ class ShireInformer(CatInformer):
         self.mag_errs = jnp.column_stack(
             [training_data[f"mag_err_{_n}"] for _n in self.filters_names]
         )
-        self.refmags = jnp.array(
-            training_data[self.config.ref_band]
-        )
+        self.refmags = jnp.array(training_data[self.config.ref_band])
 
-        self.szs = jnp.array(
-            training_data[self.config["redshift_col"]]
-        )
+        self.szs = jnp.array(training_data[self.config["redshift_col"]])
 
-        _pedges = jnp.histogram_bin_edges(self.szs, bins=min(100, self.config.nzbins)) #'auto')
+        _pedges = jnp.histogram_bin_edges(
+            self.szs, bins=min(100, self.config.nzbins)
+        )  #'auto')
         self.pzs = jnp.linspace(
             max(self.config.zmin, 0.001),
             min(self.config.zmax, _pedges[-1]),
             min(100, self.config.nzbins),
-            endpoint=True
+            endpoint=True,
         )
 
     def _load_filters(self):
         wls = jnp.arange(
-            self.config.wlmin,
-            self.config.wlmax+self.config.dwl,
-            self.config.dwl
+            self.config.wlmin, self.config.wlmax + self.config.dwl, self.config.dwl
         )
 
         transm_arr = get_sedpy(self.config.filter_dict, wls, self.data_path)
         self.filters_names = [_fnam for _fnam, _fdir in self.config.filter_dict.items()]
-        self.color_names = [f"{n1}-{n2}" for n1,n2 in zip(self.filters_names[:-1], self.filters_names[1:])]
+        self.color_names = [
+            f"{n1}-{n2}"
+            for n1, n2 in zip(self.filters_names[:-1], self.filters_names[1:])
+        ]
 
         return wls, transm_arr
 
     def _load_templates(self):
         # The redshift range we will evaluate on
-        pzs = np.histogram_bin_edges(self.szs, bins='auto')
+        pzs = np.histogram_bin_edges(self.szs, bins="auto")
 
         sspdata = load_ssp(
-            os.path.abspath(
-                os.path.join(
-                    self.data_path,
-                    "SSP",
-                    self.config.ssp_file
-                )
-            )
+            os.path.abspath(os.path.join(self.data_path, "SSP", self.config.ssp_file))
         )
 
         fwls, ftransm = self._load_filters()
 
-        '''
+        """
         spectra_file = os.path.join(self.data_path, "SED", self.config.spectra_file)
         if not os.path.isfile(spectra_file):
             print(f"{spectra_file} does not exist ! Trying with local file instead :")
@@ -408,47 +418,28 @@ class ShireInformer(CatInformer):
             tables_io.types.PD_DATAFRAME,
             fmt='hf5'
         )
-        '''
+        """
         templs_df = self.templates_df
         templ_pars_arr = jnp.array(templs_df[_DUMMY_PARS.PARAM_NAMES_FLAT])
         templ_zref = jnp.array(templs_df[self.config.redshift_col])
 
         if "sps" in self.config.templ_type.lower():
             templ_tupl_sps = make_sps_templates(
-                templ_pars_arr,
-                fwls,
-                ftransm,
-                pzs,
-                self.avs,
-                sspdata
+                templ_pars_arr, fwls, ftransm, pzs, self.avs, sspdata
             )
-            templ_rews = treemap_bpt(
-                templ_pars_arr,
-                pzs,
-                self.avs,
-                sspdata
-            )
+            templ_rews = treemap_bpt(templ_pars_arr, pzs, self.avs, sspdata)
             templ_d4k = treemap_d4000(templ_pars_arr, pzs, self.avs, sspdata)
         else:
             templ_tupl_sps = make_legacy_templates(
-                templ_pars_arr,
-                templ_zref,
-                fwls,
-                ftransm,
-                pzs,
-                self.avs,
-                sspdata
+                templ_pars_arr, templ_zref, fwls, ftransm, pzs, self.avs, sspdata
             )
-            templ_rews = treemap_bpt_leg(
-                templ_pars_arr,
-                templ_zref,
-                self.avs,
-                sspdata
-            )
+            templ_rews = treemap_bpt_leg(templ_pars_arr, templ_zref, self.avs, sspdata)
             templ_d4k = treemap_d4000_leg(templ_pars_arr, templ_zref, self.avs, sspdata)
 
         filters_names = [_fnam for _fnam, _fdir in self.config.filter_dict.items()]
-        color_names = [f"{n1}-{n2}" for n1,n2 in zip(filters_names[:-1], filters_names[1:])]
+        color_names = [
+            f"{n1}-{n2}" for n1, n2 in zip(filters_names[:-1], filters_names[1:])
+        ]
         lines_names = [
             "SF_[OII]_3728.48_REW",
             "Balmer_HI_4862.68_REW",
@@ -456,49 +447,52 @@ class ShireInformer(CatInformer):
             "SF_[OI]_6302.046_REW",
             "Balmer_HI_6564.61_REW",
             "AGN_[NII]_6585.27_REW",
-            "AGN_[SII]_6718.29_REW"
+            "AGN_[SII]_6718.29_REW",
         ]
         templs_as_dict = {}
         for it, (tname, row) in enumerate(templs_df.iterrows()):
-            _colrs, _nuvk, _rews, _d4k = jnp.array(templ_tupl_sps[it][0]), jnp.array(templ_tupl_sps[it][1]), jnp.array(templ_rews[it]), jnp.array(templ_d4k[it])
+            _colrs, _nuvk, _rews, _d4k = (
+                jnp.array(templ_tupl_sps[it][0]),
+                jnp.array(templ_tupl_sps[it][1]),
+                jnp.array(templ_rews[it]),
+                jnp.array(templ_d4k[it]),
+            )
             if "sps" not in self.config.templ_type.lower():
-                _d4k = jnp.repeat(jnp.expand_dims(_d4k, axis=0), _colrs.shape[0], axis=0)
-                _rews = jnp.repeat(jnp.expand_dims(_rews, axis=0), _colrs.shape[0], axis=0)
+                _d4k = jnp.repeat(
+                    jnp.expand_dims(_d4k, axis=0), _colrs.shape[0], axis=0
+                )
+                _rews = jnp.repeat(
+                    jnp.expand_dims(_rews, axis=0), _colrs.shape[0], axis=0
+                )
             _dflist = []
             for iav, av in enumerate(self.avs):
                 _df = pd.DataFrame(
-                    columns=color_names+['NUVK', 'D4000n']+lines_names,
+                    columns=color_names + ["NUVK", "D4000n"] + lines_names,
                     data=np.column_stack(
                         (_colrs[:, iav], _nuvk[:, iav], _d4k[:, iav], _rews[:, iav, :])
-                    )
+                    ),
                 )
-                _df['z_p'] = pzs
-                _df['Av'] = np.full(pzs.shape, av)
-                _df['Dataset'] = np.full(pzs.shape, row['Dataset'])
-                _df['name'] = np.full(pzs.shape, tname)
-                _df[self.config.redshift_col] = np.full(pzs.shape, row[self.config.redshift_col])
+                _df["z_p"] = pzs
+                _df["Av"] = np.full(pzs.shape, av)
+                _df["Dataset"] = np.full(pzs.shape, row["Dataset"])
+                _df["name"] = np.full(pzs.shape, tname)
+                _df[self.config.redshift_col] = np.full(
+                    pzs.shape, row[self.config.redshift_col]
+                )
                 _dflist.append(_df)
             templs_as_dict.update({f"{tname}": pd.concat(_dflist, ignore_index=True)})
         all_templs_df = pd.concat(
-            [_df for _, _df in templs_as_dict.items()],
-            ignore_index=True
+            [_df for _, _df in templs_as_dict.items()], ignore_index=True
         )
 
         return all_templs_df
 
-
     def _load_templates_nodustvar(self):
         # The redshift range we will evaluate on
-        pzs = np.histogram_bin_edges(self.szs, bins='auto')
+        pzs = np.histogram_bin_edges(self.szs, bins="auto")
 
         sspdata = load_ssp(
-            os.path.abspath(
-                os.path.join(
-                    self.data_path,
-                    "SSP",
-                    self.config.ssp_file
-                )
-            )
+            os.path.abspath(os.path.join(self.data_path, "SSP", self.config.ssp_file))
         )
 
         fwls, ftransm = self._load_filters()
@@ -509,36 +503,21 @@ class ShireInformer(CatInformer):
 
         if "sps" in self.config.templ_type.lower():
             templ_tupl_sps = make_sps_templates_noav(
-                templ_pars_arr,
-                fwls,
-                ftransm,
-                pzs,
-                sspdata
+                templ_pars_arr, fwls, ftransm, pzs, sspdata
             )
-            templ_rews = treemap_bpt_noav(
-                templ_pars_arr,
-                pzs,
-                sspdata
-            )
+            templ_rews = treemap_bpt_noav(templ_pars_arr, pzs, sspdata)
             templ_d4k = treemap_d4000_noav(templ_pars_arr, pzs, sspdata)
         else:
             templ_tupl_sps = make_legacy_templates_noav(
-                templ_pars_arr,
-                templ_zref,
-                fwls,
-                ftransm,
-                pzs,
-                sspdata
+                templ_pars_arr, templ_zref, fwls, ftransm, pzs, sspdata
             )
-            templ_rews = treemap_bpt_noav_leg(
-                templ_pars_arr,
-                templ_zref,
-                sspdata
-            )
+            templ_rews = treemap_bpt_noav_leg(templ_pars_arr, templ_zref, sspdata)
             templ_d4k = treemap_d4000_noav_leg(templ_pars_arr, templ_zref, sspdata)
 
         filters_names = [_fnam for _fnam, _fdir in self.config.filter_dict.items()]
-        color_names = [f"{n1}-{n2}" for n1,n2 in zip(filters_names[:-1], filters_names[1:])]
+        color_names = [
+            f"{n1}-{n2}" for n1, n2 in zip(filters_names[:-1], filters_names[1:])
+        ]
         lines_names = [
             "SF_[OII]_3728.48_REW",
             "Balmer_HI_4862.68_REW",
@@ -546,124 +525,133 @@ class ShireInformer(CatInformer):
             "SF_[OI]_6302.046_REW",
             "Balmer_HI_6564.61_REW",
             "AGN_[NII]_6585.27_REW",
-            "AGN_[SII]_6718.29_REW"
+            "AGN_[SII]_6718.29_REW",
         ]
         templs_as_dict = {}
         for it, (tname, row) in enumerate(templs_df.iterrows()):
-            _colrs, _nuvk, _rews, _d4k = jnp.array(templ_tupl_sps[it][0]), jnp.array(templ_tupl_sps[it][1]), jnp.array(templ_rews[it]), jnp.array(templ_d4k[it])
+            _colrs, _nuvk, _rews, _d4k = (
+                jnp.array(templ_tupl_sps[it][0]),
+                jnp.array(templ_tupl_sps[it][1]),
+                jnp.array(templ_rews[it]),
+                jnp.array(templ_d4k[it]),
+            )
             if "sps" not in self.config.templ_type.lower():
-                _d4k = jnp.repeat(jnp.expand_dims(_d4k, axis=0), _colrs.shape[0], axis=0)
-                _rews = jnp.repeat(jnp.expand_dims(_rews, axis=0), _colrs.shape[0], axis=0)
+                _d4k = jnp.repeat(
+                    jnp.expand_dims(_d4k, axis=0), _colrs.shape[0], axis=0
+                )
+                _rews = jnp.repeat(
+                    jnp.expand_dims(_rews, axis=0), _colrs.shape[0], axis=0
+                )
 
             _df = pd.DataFrame(
-                columns=color_names+['NUVK', 'D4000n']+lines_names,
-                data=np.column_stack(
-                    (_colrs, _nuvk, _d4k, _rews)
-                )
+                columns=color_names + ["NUVK", "D4000n"] + lines_names,
+                data=np.column_stack((_colrs, _nuvk, _d4k, _rews)),
             )
-            _df['z_p'] = pzs
-            _df['Av'] = np.full(pzs.shape, row['AV'])
-            _df['Dataset'] = np.full(pzs.shape, row['Dataset'])
-            _df['name'] = np.full(pzs.shape, tname)
-            _df[self.config.redshift_col] = np.full(pzs.shape, row[self.config.redshift_col])
+            _df["z_p"] = pzs
+            _df["Av"] = np.full(pzs.shape, row["AV"])
+            _df["Dataset"] = np.full(pzs.shape, row["Dataset"])
+            _df["name"] = np.full(pzs.shape, tname)
+            _df[self.config.redshift_col] = np.full(
+                pzs.shape, row[self.config.redshift_col]
+            )
             templs_as_dict.update({f"{tname}": _df})
         all_templs_df = pd.concat(
-            [_df for _, _df in templs_as_dict.items()],
-            ignore_index=True
+            [_df for _, _df in templs_as_dict.items()], ignore_index=True
         )
 
         return all_templs_df
 
-
-    @partial(jit, static_argnums=0) #, 2, 3))
-    def _frac_likelihood(self, frac_params, mags): #, btyp, idxbtyp):
-        _foi = frac_params[:self.ntyp]
-        _kti = frac_params[self.ntyp:]
-        X = (_foi, _kti) #jnp.vstack((_foi, _kti)).T
+    @partial(jit, static_argnums=0)  # , 2, 3))
+    def _frac_likelihood(self, frac_params, mags):  # , btyp, idxbtyp):
+        _foi = frac_params[: self.ntyp]
+        _kti = frac_params[self.ntyp :]
+        X = (_foi, _kti)  # jnp.vstack((_foi, _kti)).T
         probs = vmap_frac(X, self.m0, mags)
         probsel = probs[self.besttypes, jnp.arange(len(self.besttypes))]
-        likelihood = jnp.where(probsel>0, -jnp.log(probsel), 0)
+        likelihood = jnp.where(probsel > 0, -jnp.log(probsel), 0)
         return jnp.nansum(likelihood)
 
-
-    @partial(jit, static_argnums=0) #, 2, 3))
-    def _frac_likelihood_alaBPZ(self, frac_params, mags): #, btyp, idxbtyp):
-        _foi = frac_params[:self.ntyp-1]
-        _kti = frac_params[self.ntyp-1:]
-        X = (_foi, _kti) #jnp.vstack((_foi, _kti)).T
+    @partial(jit, static_argnums=0)  # , 2, 3))
+    def _frac_likelihood_alaBPZ(self, frac_params, mags):  # , btyp, idxbtyp):
+        _foi = frac_params[: self.ntyp - 1]
+        _kti = frac_params[self.ntyp - 1 :]
+        X = (_foi, _kti)  # jnp.vstack((_foi, _kti)).T
         _probs = vmap_frac(X, self.m0[:-1], mags)
         _probs_last = 1.0 - jnp.nansum(_probs, axis=0)
         probs = jnp.concatenate((_probs, jnp.expand_dims(_probs_last, axis=0)), axis=0)
         probsel = probs[self.besttypes, jnp.arange(len(self.besttypes))]
-        likelihood = jnp.where(probsel>0, -jnp.log(probsel), 0)
+        likelihood = jnp.where(probsel > 0, -jnp.log(probsel), 0)
         return jnp.nansum(likelihood)
 
-
-    @partial(jit, static_argnums=0) #, 2, 3))
-    def _frac_likelihood_combined(self, frac_params, mags): #, btyp, idxbtyp):
-        _foi = frac_params[:self.ntyp]
-        _kti = frac_params[self.ntyp:2*self.ntyp]
-        _moi = frac_params[2*self.ntyp:]
-        X = (_foi, _kti) #jnp.vstack((_foi, _kti)).T
+    @partial(jit, static_argnums=0)  # , 2, 3))
+    def _frac_likelihood_combined(self, frac_params, mags):  # , btyp, idxbtyp):
+        _foi = frac_params[: self.ntyp]
+        _kti = frac_params[self.ntyp : 2 * self.ntyp]
+        _moi = frac_params[2 * self.ntyp :]
+        X = (_foi, _kti)  # jnp.vstack((_foi, _kti)).T
         probs = vmap_frac(X, _moi, mags)
         probsel = probs[self.besttypes, jnp.arange(len(self.besttypes))]
-        likelihood = jnp.where(probsel>0, -jnp.log(probsel), 0)
+        likelihood = jnp.where(probsel > 0, -jnp.log(probsel), 0)
         return jnp.nansum(likelihood)
 
-
-    @partial(jit, static_argnums=0) #, 2, 3))
-    def _frac_likelihood_combined_alaBPZ(self, frac_params, mags): #, btyp, idxbtyp):
-        _foi = frac_params[:self.ntyp-1]
-        _kti = frac_params[self.ntyp:2*self.ntyp-1]
-        _moi = frac_params[2*self.ntyp:]
-        X = (_foi, _kti) #jnp.vstack((_foi, _kti)).T
+    @partial(jit, static_argnums=0)  # , 2, 3))
+    def _frac_likelihood_combined_alaBPZ(self, frac_params, mags):  # , btyp, idxbtyp):
+        _foi = frac_params[: self.ntyp - 1]
+        _kti = frac_params[self.ntyp : 2 * self.ntyp - 1]
+        _moi = frac_params[2 * self.ntyp :]
+        X = (_foi, _kti)  # jnp.vstack((_foi, _kti)).T
         _probs = vmap_frac(X, _moi[:-1], mags)
         _probs_last = 1.0 - jnp.nansum(_probs, axis=0)
         probs = jnp.concatenate((_probs, jnp.expand_dims(_probs_last, axis=0)), axis=0)
         probsel = probs[self.besttypes, jnp.arange(len(self.besttypes))]
-        likelihood = jnp.where(probsel>0, -jnp.log(probsel), 0)
+        likelihood = jnp.where(probsel > 0, -jnp.log(probsel), 0)
         return jnp.nansum(likelihood)
-
 
     @partial(jit, static_argnums=0)
     def _dn_dz_likelihood(self, pars, mags, zs):
         _mo, _zo, _alpha, _km = pars
         lik = vmap_dndz_gals((mags, zs), _zo, _alpha, _km, _mo)
-        nllik = jnp.nansum(jnp.where(lik>0, -jnp.log(lik), 0))
+        nllik = jnp.nansum(jnp.where(lik > 0, -jnp.log(lik), 0))
         return nllik
-
 
     @partial(jit, static_argnums=0)
     def _dn_dz_likelihood_combined(self, pars, mags, zs):
-        _moi, _zoi, _alphai, _kmi = pars[:self.ntyp], pars[self.ntyp:2*self.ntyp], pars[2*self.ntyp:3*self.ntyp], pars[3*self.ntyp:]
+        _moi, _zoi, _alphai, _kmi = (
+            pars[: self.ntyp],
+            pars[self.ntyp : 2 * self.ntyp],
+            pars[2 * self.ntyp : 3 * self.ntyp],
+            pars[3 * self.ntyp :],
+        )
         lik = vmap_dndz((mags, zs), _zoi, _alphai, _kmi, _moi)
         liksel = lik[self.besttypes, jnp.arange(len(self.besttypes))]
-        nllik = jnp.nansum(jnp.where(liksel>0, -jnp.log(liksel), 0))
+        nllik = jnp.nansum(jnp.where(liksel > 0, -jnp.log(liksel), 0))
         return nllik
 
     @partial(jit, static_argnums=0)
     def _combined_nllik(self, pars, mags, zs):
-        fracpars = pars[:3*self.ntyp]
-        dnzpars = pars[2*self.ntyp:] # overlap for m0
-        return self._frac_likelihood_combined(fracpars, mags)+self._dn_dz_likelihood_combined(dnzpars, mags, zs)
-
+        fracpars = pars[: 3 * self.ntyp]
+        dnzpars = pars[2 * self.ntyp :]  # overlap for m0
+        return self._frac_likelihood_combined(
+            fracpars, mags
+        ) + self._dn_dz_likelihood_combined(dnzpars, mags, zs)
 
     @partial(jit, static_argnums=0)
     def _combined_nllik_alaBPZ(self, pars, mags, zs):
-        fracpars = pars[:3*self.ntyp]
-        dnzpars = pars[2*self.ntyp:] # overlap for m0
-        return self._frac_likelihood_combined_alaBPZ(fracpars, mags)+self._dn_dz_likelihood_combined(dnzpars, mags, zs)
-
+        fracpars = pars[: 3 * self.ntyp]
+        dnzpars = pars[2 * self.ntyp :]  # overlap for m0
+        return self._frac_likelihood_combined_alaBPZ(
+            fracpars, mags
+        ) + self._dn_dz_likelihood_combined(dnzpars, mags, zs)
 
     def _fit_prior(self):
         print("Fitting prior...")
-        fo_init = jnp.full(self.ntyp, 1/self.ntyp)
+        fo_init = jnp.full(self.ntyp, 1 / self.ntyp)
         kt_init = jnp.full(self.ntyp, self.config.init_kt)
         m0_init = jnp.full(self.ntyp, self.config.init_m0)
         z0_init = jnp.full(self.ntyp, self.config.init_z0)
         al_init = jnp.full(self.ntyp, self.config.init_alpha)
         km_init = jnp.full(self.ntyp, self.config.init_km)
-        
+
         initparams = jnp.concatenate(
             (fo_init, kt_init, m0_init, z0_init, al_init, km_init)
         )
@@ -671,74 +659,75 @@ class ShireInformer(CatInformer):
         constrmatrx = jnp.vstack(
             (
                 jnp.concatenate(
-                    (jnp.ones(self.ntyp), jnp.zeros(initparams.shape[0]-self.ntyp))
+                    (jnp.ones(self.ntyp), jnp.zeros(initparams.shape[0] - self.ntyp))
                 ),
                 jnp.concatenate(
                     (
                         jnp.identity(self.ntyp),
-                        jnp.zeros((self.ntyp, initparams.shape[0]-self.ntyp))
+                        jnp.zeros((self.ntyp, initparams.shape[0] - self.ntyp)),
                     ),
-                    axis=1
+                    axis=1,
                 ),
-                #jnp.concatenate((jnp.zeros(2*self.ntyp), jnp.ones(1), jnp.full(1, -1.0), jnp.zeros(initparams.shape[0]-3*self.ntyp+1))),
-                #jnp.concatenate((jnp.zeros(2*self.ntyp), jnp.ones(1), jnp.zeros(1), jnp.full(1, -1.0), jnp.zeros(initparams.shape[0]-3*self.ntyp))),
+                # jnp.concatenate((jnp.zeros(2*self.ntyp), jnp.ones(1), jnp.full(1, -1.0), jnp.zeros(initparams.shape[0]-3*self.ntyp+1))),
+                # jnp.concatenate((jnp.zeros(2*self.ntyp), jnp.ones(1), jnp.zeros(1), jnp.full(1, -1.0), jnp.zeros(initparams.shape[0]-3*self.ntyp))),
                 jnp.concatenate(
                     (
-                        jnp.zeros((self.ntyp-1, 2*self.ntyp)),
-                        jnp.ones((self.ntyp-1, 1)),
-                        -1.0*jnp.identity(self.ntyp-1),
-                        jnp.zeros((self.ntyp-1, initparams.shape[0]-3*self.ntyp))
+                        jnp.zeros((self.ntyp - 1, 2 * self.ntyp)),
+                        jnp.ones((self.ntyp - 1, 1)),
+                        -1.0 * jnp.identity(self.ntyp - 1),
+                        jnp.zeros((self.ntyp - 1, initparams.shape[0] - 3 * self.ntyp)),
                     ),
-                    axis=1
+                    axis=1,
                 ),
                 jnp.concatenate(
                     (
-                        jnp.zeros((3*self.ntyp, 3*self.ntyp)),
-                        jnp.identity(3*self.ntyp),
+                        jnp.zeros((3 * self.ntyp, 3 * self.ntyp)),
+                        jnp.identity(3 * self.ntyp),
                     ),
-                    axis=1
-                )
+                    axis=1,
+                ),
             )
         )
-        lb = jnp.concatenate(
-            (jnp.ones(1), jnp.zeros(constrmatrx.shape[0]-1))
-        )
+        lb = jnp.concatenate((jnp.ones(1), jnp.zeros(constrmatrx.shape[0] - 1)))
         ub = jnp.concatenate(
-            (jnp.ones(1+self.ntyp), jnp.zeros(self.ntyp-1), jnp.full(constrmatrx.shape[0]-2*self.ntyp, jnp.inf))
+            (
+                jnp.ones(1 + self.ntyp),
+                jnp.zeros(self.ntyp - 1),
+                jnp.full(constrmatrx.shape[0] - 2 * self.ntyp, jnp.inf),
+            )
         )
 
         _results = sciop.minimize(
-            lambda P: self._combined_nllik(P, self.refmags, self.szs), initparams,
-            method="trust-constr",# "COBYQA",# "Nelder-Mead", #
+            lambda P: self._combined_nllik(P, self.refmags, self.szs),
+            initparams,
+            method="trust-constr",  # "COBYQA",# "Nelder-Mead", #
             constraints=[
-                sciop.LinearConstraint(
-                    constrmatrx,
-                    lb,
-                    ub
-                ),
-            ]
+                sciop.LinearConstraint(constrmatrx, lb, ub),
+            ],
         ).x
-        tmpfo = _results[:self.ntyp]
+        tmpfo = _results[: self.ntyp]
         # minimizer can sometimes give fractions greater than one, if so normalize
         fracnorm = jnp.sum(tmpfo)
-        self.fo_arr = tmpfo/fracnorm
-        self.kt_arr = _results[self.ntyp:2*self.ntyp]
-        self.m0 = _results[2*self.ntyp:3*self.ntyp]
-        zo_arr = _results[3*self.ntyp:4*self.ntyp]
-        alpha_arr = _results[4*self.ntyp:-self.ntyp]
-        km_arr = _results[-self.ntyp:]
-        
-        for i, (ifo, ikt, imo, izo, ial, ikm) in enumerate(zip(
-            self.fo_arr, self.kt_arr, self.m0, zo_arr, alpha_arr, km_arr )):
-            print(f"best fit f0, kt, m0, z0, alpha, km for type {i}: {ifo, ikt, imo, izo, ial, ikm}")
-        
+        self.fo_arr = tmpfo / fracnorm
+        self.kt_arr = _results[self.ntyp : 2 * self.ntyp]
+        self.m0 = _results[2 * self.ntyp : 3 * self.ntyp]
+        zo_arr = _results[3 * self.ntyp : 4 * self.ntyp]
+        alpha_arr = _results[4 * self.ntyp : -self.ntyp]
+        km_arr = _results[-self.ntyp :]
+
+        for i, (ifo, ikt, imo, izo, ial, ikm) in enumerate(
+            zip(self.fo_arr, self.kt_arr, self.m0, zo_arr, alpha_arr, km_arr)
+        ):
+            print(
+                f"best fit f0, kt, m0, z0, alpha, km for type {i}: {ifo, ikt, imo, izo, ial, ikm}"
+            )
+
         return zo_arr, alpha_arr, km_arr
 
-
-    #@partial(jit, static_argnums=0)
+    # @partial(jit, static_argnums=0)
     def _find_fractions(self):
         # set up fo and kt arrays, choose default start values
-        fo_init = jnp.full(self.ntyp, 1/self.ntyp)
+        fo_init = jnp.full(self.ntyp, 1 / self.ntyp)
         kt_init = jnp.full(self.ntyp, self.config.init_kt)
         fracparams = jnp.concatenate((fo_init, kt_init))
 
@@ -749,50 +738,44 @@ class ShireInformer(CatInformer):
         foconstrmatrx = jnp.vstack(
             (
                 jnp.concatenate(
-                    (jnp.ones(self.ntyp), jnp.zeros(fracparams.shape[0]-self.ntyp))
+                    (jnp.ones(self.ntyp), jnp.zeros(fracparams.shape[0] - self.ntyp))
                 ),
                 jnp.concatenate(
                     (
                         jnp.identity(self.ntyp),
-                        jnp.zeros((self.ntyp, fracparams.shape[0]-self.ntyp))
+                        jnp.zeros((self.ntyp, fracparams.shape[0] - self.ntyp)),
                     ),
-                    axis=1
+                    axis=1,
                 ),
             )
         )
 
-        lb = jnp.concatenate(
-            (jnp.ones(1), jnp.zeros(foconstrmatrx.shape[0]-1))
-        )
+        lb = jnp.concatenate((jnp.ones(1), jnp.zeros(foconstrmatrx.shape[0] - 1)))
         ub = jnp.ones(foconstrmatrx.shape[0])
 
         frac_results = sciop.minimize(
-            lambda P: self._frac_likelihood(P, self.refmags), fracparams,
-            method="trust-constr",# "COBYQA",# "Nelder-Mead",#
+            lambda P: self._frac_likelihood(P, self.refmags),
+            fracparams,
+            method="trust-constr",  # "COBYQA",# "Nelder-Mead",#
             constraints=[
-                sciop.LinearConstraint(
-                    foconstrmatrx,
-                    lb,
-                    ub
-                ),
-            ]
+                sciop.LinearConstraint(foconstrmatrx, lb, ub),
+            ],
         ).x
-        tmpfo = frac_results[:self.ntyp]
+        tmpfo = frac_results[: self.ntyp]
         # minimizer can sometimes give fractions greater than one, if so normalize
         fracnorm = jnp.sum(tmpfo)
-        self.fo_arr = tmpfo/fracnorm
-        self.kt_arr = frac_results[self.ntyp:]
+        self.fo_arr = tmpfo / fracnorm
+        self.kt_arr = frac_results[self.ntyp :]
         for i, (ifo, ikt) in enumerate(zip(self.fo_arr, self.kt_arr)):
             print(f"best fit f0, kt for type {i}: {ifo, ikt}")
 
-
-    #@partial(jit, static_argnums=0)
+    # @partial(jit, static_argnums=0)
     def _find_fractions_alaBPZ(self):
         # set up fo and kt arrays, choose default start values
-        fo_init = jnp.full(self.ntyp-1, 1/self.ntyp)
-        kt_init = jnp.full(self.ntyp-1, self.config.init_kt)
+        fo_init = jnp.full(self.ntyp - 1, 1 / self.ntyp)
+        kt_init = jnp.full(self.ntyp - 1, self.config.init_kt)
         fracparams = jnp.concatenate((fo_init, kt_init))
-        
+
         print("Finding fractions...")
         # run scipy optimize to find best params
         # note that best fit vals are stored as "x" for some reason
@@ -800,14 +783,19 @@ class ShireInformer(CatInformer):
         foconstrmatrx = jnp.vstack(
             (
                 jnp.concatenate(
-                    (jnp.ones(self.ntyp-1), jnp.zeros(fracparams.shape[0]-(self.ntyp-1)))
+                    (
+                        jnp.ones(self.ntyp - 1),
+                        jnp.zeros(fracparams.shape[0] - (self.ntyp - 1)),
+                    )
                 ),
                 jnp.concatenate(
                     (
-                        jnp.identity(self.ntyp-1),
-                        jnp.zeros((self.ntyp-1, fracparams.shape[0]-(self.ntyp-1)))
+                        jnp.identity(self.ntyp - 1),
+                        jnp.zeros(
+                            (self.ntyp - 1, fracparams.shape[0] - (self.ntyp - 1))
+                        ),
                     ),
-                    axis=1
+                    axis=1,
                 ),
             )
         )
@@ -815,23 +803,17 @@ class ShireInformer(CatInformer):
         ub = jnp.ones(foconstrmatrx.shape[0])
 
         frac_results = sciop.minimize(
-            lambda P: self._frac_likelihood_alaBPZ(P, self.refmags), fracparams,
-            method="trust-constr",# "COBYQA",# "Nelder-Mead",#
-            constraints=[
-                sciop.LinearConstraint(
-                    foconstrmatrx,
-                    lb,
-                    ub
-                )
-            ]
+            lambda P: self._frac_likelihood_alaBPZ(P, self.refmags),
+            fracparams,
+            method="trust-constr",  # "COBYQA",# "Nelder-Mead",#
+            constraints=[sciop.LinearConstraint(foconstrmatrx, lb, ub)],
         ).x
         # minimizer can sometimes give fractions greater than one, if so normalize
-        #fracnorm = jnp.sum(tmpfo)
-        self.fo_arr = frac_results[:self.ntyp-1]
-        self.kt_arr = frac_results[self.ntyp-1:]
+        # fracnorm = jnp.sum(tmpfo)
+        self.fo_arr = frac_results[: self.ntyp - 1]
+        self.kt_arr = frac_results[self.ntyp - 1 :]
         for i, (ifo, ikt) in enumerate(zip(self.fo_arr, self.kt_arr)):
             print(f"best fit f0, kt for type {i}: {ifo, ikt}")
-
 
     def _find_dndz_params(self):
         print("Fitting dn/dz...")
@@ -839,10 +821,8 @@ class ShireInformer(CatInformer):
         z0_init = jnp.full(self.ntyp, self.config.init_z0)
         al_init = jnp.full(self.ntyp, self.config.init_alpha)
         km_init = jnp.full(self.ntyp, self.config.init_km)
-        
-        initparams = jnp.concatenate(
-            (m0_init, z0_init, al_init, km_init)
-        )
+
+        initparams = jnp.concatenate((m0_init, z0_init, al_init, km_init))
 
         constrmatrx = jnp.concatenate(
             (
@@ -859,54 +839,53 @@ class ShireInformer(CatInformer):
                 # ),
                 jnp.concatenate(
                     (
-                        jnp.ones((self.ntyp-1, 1)),
-                        -1.0*jnp.identity(self.ntyp-1),
-                        jnp.zeros((self.ntyp-1, initparams.shape[0]-self.ntyp))
+                        jnp.ones((self.ntyp - 1, 1)),
+                        -1.0 * jnp.identity(self.ntyp - 1),
+                        jnp.zeros((self.ntyp - 1, initparams.shape[0] - self.ntyp)),
                     ),
-                    axis=1
+                    axis=1,
                 ),
                 jnp.concatenate(
                     (
-                        jnp.zeros((3*self.ntyp, self.ntyp)),
-                        jnp.identity(3*self.ntyp)
+                        jnp.zeros((3 * self.ntyp, self.ntyp)),
+                        jnp.identity(3 * self.ntyp),
                     ),
-                    axis=1
-                )
+                    axis=1,
+                ),
             ),
-            axis=0
+            axis=0,
         )
 
         lb = jnp.zeros(constrmatrx.shape[0])
         ub = jnp.concatenate(
             (
-                jnp.zeros(self.ntyp-1),
-                jnp.full(constrmatrx.shape[0]-self.ntyp+1, jnp.inf)
+                jnp.zeros(self.ntyp - 1),
+                jnp.full(constrmatrx.shape[0] - self.ntyp + 1, jnp.inf),
             )
         )
 
         print(f"Constraints matrices: {constrmatrx, lb, ub}")
         _results = sciop.minimize(
-            lambda P: self._dn_dz_likelihood_combined(P, self.refmags, self.szs), initparams,
-            method="trust-constr", #"COBYQA",# "Nelder-Mead", #
+            lambda P: self._dn_dz_likelihood_combined(P, self.refmags, self.szs),
+            initparams,
+            method="trust-constr",  # "COBYQA",# "Nelder-Mead", #
             constraints=[
-                sciop.LinearConstraint(
-                    constrmatrx,
-                    lb,
-                    ub
-                ),
-            ]
+                sciop.LinearConstraint(constrmatrx, lb, ub),
+            ],
         ).x
-        self.m0 = _results[:self.ntyp]
-        zo_arr = _results[self.ntyp:2*self.ntyp]
-        alpha_arr = _results[2*self.ntyp:-self.ntyp]
-        km_arr = _results[-self.ntyp:]
-        
-        for i, (imo, izo, ial, ikm) in enumerate(zip(self.m0, zo_arr, alpha_arr, km_arr )):
+        self.m0 = _results[: self.ntyp]
+        zo_arr = _results[self.ntyp : 2 * self.ntyp]
+        alpha_arr = _results[2 * self.ntyp : -self.ntyp]
+        km_arr = _results[-self.ntyp :]
+
+        for i, (imo, izo, ial, ikm) in enumerate(
+            zip(self.m0, zo_arr, alpha_arr, km_arr)
+        ):
             print(f"best fit m0, z0, alpha, km for type {i}: {imo, izo, ial, ikm}")
         return zo_arr, alpha_arr, km_arr
-        #return None
+        # return None
 
-    #@partial(jit, static_argnums=0)
+    # @partial(jit, static_argnums=0)
     def _find_dndz_params_DEPRECATED(self):
         # initial parameters for zo, alpha, and km
         mo_arr = []
@@ -919,13 +898,25 @@ class ShireInformer(CatInformer):
             typmask = jnp.array([b == i for b in self.besttypes])
             _m = self.refmags[typmask]
             zarr = self.szs[typmask]
-            dndzparams = jnp.array([self.config.init_m0, self.config.init_z0, self.config.init_alpha, self.config.init_km])
+            dndzparams = jnp.array(
+                [
+                    self.config.init_m0,
+                    self.config.init_z0,
+                    self.config.init_alpha,
+                    self.config.init_km,
+                ]
+            )
 
             moi, zoi, alfi, kmi = sciop.minimize(
                 lambda P: self._dn_dz_likelihood(P, _m, zarr),
                 dndzparams,
-                method="Nelder-Mead", #"COBYQA", #"trust-constr", #
-                bounds=[(-jnp.inf, jnp.inf), (0.0, jnp.inf), (0.0, jnp.inf), (0.0, jnp.inf)]
+                method="Nelder-Mead",  # "COBYQA", #"trust-constr", #
+                bounds=[
+                    (-jnp.inf, jnp.inf),
+                    (0.0, jnp.inf),
+                    (0.0, jnp.inf),
+                    (0.0, jnp.inf),
+                ],
             ).x
 
             mo_arr.append(moi)
@@ -935,101 +926,124 @@ class ShireInformer(CatInformer):
             print(f"best fit m0, z0, alpha, km for type {i}: {moi, zoi, alfi, kmi}")
         return jnp.array(mo_arr), jnp.array(zo_arr), jnp.array(a_arr), jnp.array(km_arr)
 
-
     def class_nuvk(self, test_df):
-        #self._load_filters()
+        # self._load_filters()
         all_tsels_df = self._nuvk_classif()
-        classifier = RandomForestClassifier() # use defaults settings for now
-        X = np.clip(all_tsels_df[self.color_names], -3.4e+38, 3.4e+38) #+[self.config.redshift_col]
-        y = np.array(all_tsels_df['CAT_NUVK'])
+        classifier = RandomForestClassifier()  # use defaults settings for now
+        X = np.clip(
+            all_tsels_df[self.color_names], -3.4e38, 3.4e38
+        )  # +[self.config.redshift_col]
+        y = np.array(all_tsels_df["CAT_NUVK"])
         classifier.fit(X, y)
 
-        Xtest = np.clip(test_df[self.color_names], -3.4e+38, 3.4e+38) #+[self.config.redshift_col]
+        Xtest = np.clip(
+            test_df[self.color_names], -3.4e38, 3.4e38
+        )  # +[self.config.redshift_col]
         ytest = classifier.predict(Xtest)
-        #yvals, ycounts = np.unique(ytest, return_counts=True)
+        # yvals, ycounts = np.unique(ytest, return_counts=True)
 
-        test_df['CAT_NUVK'] = ytest
-        self.besttypes = [np.argwhere(self.refcategs==cat)[0][0] for cat in ytest]
-        self.nt_array = np.array([ np.count_nonzero(all_tsels_df['CAT_NUVK'] == _typ) for _typ in self.refcategs ])
+        test_df["CAT_NUVK"] = ytest
+        self.besttypes = [np.argwhere(self.refcategs == cat)[0][0] for cat in ytest]
+        self.nt_array = np.array(
+            [
+                np.count_nonzero(all_tsels_df["CAT_NUVK"] == _typ)
+                for _typ in self.refcategs
+            ]
+        )
 
-        #z0list, alflist, kmlist = self._fit_prior()
+        # z0list, alflist, kmlist = self._fit_prior()
 
-        #m0list, z0list, alflist, kmlist = self._find_dndz_params_DEPRECATED()
-        #self.m0 = m0list
+        # m0list, z0list, alflist, kmlist = self._find_dndz_params_DEPRECATED()
+        # self.m0 = m0list
         z0list, alflist, kmlist = self._find_dndz_params()
         self._find_fractions_alaBPZ()
 
-        return z0list, alflist, kmlist #jnp.array(z0list), jnp.array(alflist), jnp.array(kmlist)
-
+        return (
+            z0list,
+            alflist,
+            kmlist,
+        )  # jnp.array(z0list), jnp.array(alflist), jnp.array(kmlist)
 
     def class_bpt(self, test_df):
         all_tsels_df = self._bpt_classif()
-        classifier = RandomForestClassifier() # use defaults settings for now
-        X = np.clip(all_tsels_df[self.color_names], -3.4e+38, 3.4e+38) #+[self.config.redshift_col]
-        y = np.array(all_tsels_df['CAT_NII'])
+        classifier = RandomForestClassifier()  # use defaults settings for now
+        X = np.clip(
+            all_tsels_df[self.color_names], -3.4e38, 3.4e38
+        )  # +[self.config.redshift_col]
+        y = np.array(all_tsels_df["CAT_NII"])
         classifier.fit(X, y)
 
-        Xtest = np.clip(test_df[self.color_names], -3.4e+38, 3.4e+38) #+[self.config.redshift_col]
+        Xtest = np.clip(
+            test_df[self.color_names], -3.4e38, 3.4e38
+        )  # +[self.config.redshift_col]
         ytest = classifier.predict(Xtest)
-        #yvals, ycounts = np.unique(ytest, return_counts=True)
+        # yvals, ycounts = np.unique(ytest, return_counts=True)
 
-        test_df['CAT_NII'] = ytest
-        self.besttypes = [np.argwhere(self.refcategs==cat)[0][0] for cat in ytest]
-        self.nt_array = np.array([ np.count_nonzero(all_tsels_df['CAT_NII'] == _typ) for _typ in self.refcategs ])
+        test_df["CAT_NII"] = ytest
+        self.besttypes = [np.argwhere(self.refcategs == cat)[0][0] for cat in ytest]
+        self.nt_array = np.array(
+            [
+                np.count_nonzero(all_tsels_df["CAT_NII"] == _typ)
+                for _typ in self.refcategs
+            ]
+        )
 
-        #z0list, alflist, kmlist = self._fit_prior()
+        # z0list, alflist, kmlist = self._fit_prior()
 
-        #m0list, z0list, alflist, kmlist = self._find_dndz_params_DEPRECATED()
-        #self.m0 = m0list
+        # m0list, z0list, alflist, kmlist = self._find_dndz_params_DEPRECATED()
+        # self.m0 = m0list
         z0list, alflist, kmlist = self._find_dndz_params()
         self._find_fractions_alaBPZ()
 
-        return z0list, alflist, kmlist #jnp.array(z0list), jnp.array(alflist), jnp.array(kmlist)
+        return (
+            z0list,
+            alflist,
+            kmlist,
+        )  # jnp.array(z0list), jnp.array(alflist), jnp.array(kmlist)
 
     @partial(jit, static_argnums=0)
     def _min_llik(self, sps_temp, ocols, oerrs, ozs):
         neglog_lik = vmap_neg_llik_(sps_temp, ocols, oerrs)
-        _lik = jnp.exp(-0.5*neglog_lik)
+        _lik = jnp.exp(-0.5 * neglog_lik)
         _max_lik_dust = jnp.nanmax(_lik, axis=1)
         _ptot = trapezoid(_max_lik_dust, x=self.pzs)
         _lik_zs = jnp.where(
-            jnp.logical_or(
-                self.pzs<0.85*ozs-0.15,
-                self.pzs>1.15*ozs+0.15
-            ),
+            jnp.logical_or(self.pzs < 0.85 * ozs - 0.15, self.pzs > 1.15 * ozs + 0.15),
             0.0,
-            _max_lik_dust
+            _max_lik_dust,
         )
         _p_zs = trapezoid(_lik_zs, x=self.pzs)
-        #_interp_at_zs = jnp.interp(ozs, self.pzs, _min_nllik_dust)
-        return _p_zs/_ptot
+        # _interp_at_zs = jnp.interp(ozs, self.pzs, _min_nllik_dust)
+        return _p_zs / _ptot
 
-    vmap_min_llik_gals = vmap(
-        _min_llik,
-        in_axes=(None, None, 0, 0, 0)
-    )
+    vmap_min_llik_gals = vmap(_min_llik, in_axes=(None, None, 0, 0, 0))
 
     def _find_best_templ(self, templ_tuples):
         id_i_band = self.config.bands.index(self.config.ref_band)
-        _, ab_colors, ab_cols_errs = (
-            vmap_mags_to_i_and_colors(self.mags, self.mag_errs, id_i_band)
+        _, ab_colors, ab_cols_errs = vmap_mags_to_i_and_colors(
+            self.mags, self.mag_errs, id_i_band
         )
         lik_arr = tree_map(
-            lambda sed_tupl: self.vmap_min_llik_gals(sed_tupl[0], ab_colors, ab_cols_errs, self.szs),
+            lambda sed_tupl: self.vmap_min_llik_gals(
+                sed_tupl[0], ab_colors, ab_cols_errs, self.szs
+            ),
             templ_tuples,
             is_leaf=istuple,
         )
 
         lik_arr = jnp.array(lik_arr)
         _best_templ_idx = jnp.nanargmax(lik_arr, axis=0)
-        
+
         unique, counts = np.unique(_best_templ_idx, return_counts=True)
         _order = np.flip(np.argsort(counts))
         unique, counts = unique[_order], counts[_order]
         _cumul = np.cumsum(counts)
-        _last_templ = min(np.argwhere(_cumul > 0.9*_best_templ_idx.shape[0])[0][0], self.config.ntemplates-1)
+        _last_templ = min(
+            np.argwhere(_cumul > 0.9 * _best_templ_idx.shape[0])[0][0],
+            self.config.ntemplates - 1,
+        )
 
-        return unique[:_last_templ+1], counts[:_last_templ+1]
+        return unique[: _last_templ + 1], counts[: _last_templ + 1]
 
     def run(self):
         wls, transm_arr = self._load_filters()
@@ -1037,71 +1051,56 @@ class ShireInformer(CatInformer):
 
         train_df = pd.DataFrame(
             data=jnp.column_stack(
-                (self.mags[:, :-1]-self.mags[:, 1:], self.refmags, self.szs)
+                (self.mags[:, :-1] - self.mags[:, 1:], self.refmags, self.szs)
             ),
-            columns=self.color_names+[self.config.ref_band, self.config.redshift_col]
+            columns=self.color_names + [self.config.ref_band, self.config.redshift_col],
         )
 
         templs_ref_df = pd.read_hdf(
             os.path.abspath(
-                os.path.join(
-                    self.data_path,
-                    "SED",
-                    self.config.spectra_file
-                )
+                os.path.join(self.data_path, "SED", self.config.spectra_file)
             ),
-            key="fit_dsps"
+            key="fit_dsps",
         )
 
         if self.config.randomsel:
             print(f"Selecting {self.config.ntemplates} random templates.")
-            templs_score_df = templs_ref_df.sample(n=self.config.ntemplates, replace=False)
-            templs_score_df['score'] = np.full(self.config.ntemplates, -1)
-            templs_score_df['name'] = templs_score_df.index
+            templs_score_df = templs_ref_df.sample(
+                n=self.config.ntemplates, replace=False
+            )
+            templs_score_df["score"] = np.full(self.config.ntemplates, -1)
+            templs_score_df["name"] = templs_score_df.index
         else:
-            print(f"Using training data to select the best templates, capped to a number of {self.config.ntemplates}.")
+            print(
+                f"Using training data to select the best templates, capped to a number of {self.config.ntemplates}."
+            )
             pars_arr = jnp.array(templs_ref_df[_DUMMY_PARS.PARAM_NAMES_FLAT])
             templ_zref = jnp.array(templs_ref_df[self.config.redshift_col])
 
             ssp_data = load_ssp(
                 os.path.abspath(
-                    os.path.join(
-                        self.data_path,
-                        "SSP",
-                        self.config.ssp_file
-                    )
+                    os.path.join(self.data_path, "SSP", self.config.ssp_file)
                 )
             )
 
             if "sps" in self.config.templ_type.lower():
-                #templ_tupl = [tuple(_pars) for _pars in pars_arr]
+                # templ_tupl = [tuple(_pars) for _pars in pars_arr]
                 templ_tupl_sps = make_sps_templates(
-                    pars_arr,
-                    wls,
-                    transm_arr,
-                    self.pzs,
-                    self.avs,
-                    ssp_data
+                    pars_arr, wls, transm_arr, self.pzs, self.avs, ssp_data
                 )
             else:
-                #templ_tupl = [tuple(_pars)+tuple([_z]) for _pars, _z in zip(pars_arr, templ_zref, strict=True)]
+                # templ_tupl = [tuple(_pars)+tuple([_z]) for _pars, _z in zip(pars_arr, templ_zref, strict=True)]
                 templ_tupl_sps = make_legacy_templates(
-                    pars_arr,
-                    templ_zref,
-                    wls,
-                    transm_arr,
-                    self.pzs,
-                    self.avs,
-                    ssp_data
+                    pars_arr, templ_zref, wls, transm_arr, self.pzs, self.avs, ssp_data
                 )
 
             retained_templ_idx, counts_templ = self._find_best_templ(templ_tupl_sps)
-            #print(np.cumsum(counts_templ)/self.szs.shape[0])
+            # print(np.cumsum(counts_templ)/self.szs.shape[0])
             templs_score_df = templs_ref_df.iloc[retained_templ_idx].copy()
-            templs_score_df['score'] = counts_templ/self.szs.shape[0]
-            templs_score_df['name'] = templs_score_df.index
-            
-            '''
+            templs_score_df["score"] = counts_templ / self.szs.shape[0]
+            templs_score_df["name"] = templs_score_df.index
+
+            """
             templs_as_dict = {}
             for it, (tname, row) in enumerate(templs_ref_df.iterrows()):
                 _colrs = templ_tupl_sps[it]
@@ -1178,17 +1177,24 @@ class ShireInformer(CatInformer):
                 templs_score_df.loc[tn, 'score'] = float(msc)
                 templs_score_df.loc[tn, 'name'] = tn
             templs_score_df.sort_values('score', ascending=True, inplace=True)
-            '''
+            """
 
-        #tables_io.write(
+        # tables_io.write(
         #    templs_score_df,
         #    self.config.output,
         #    fmt='h5' #'hf5'
-        #)
+        # )
 
-        self.templates_df = templs_score_df[["name", "num", "score", "Dataset", self.config["redshift_col"]]+_DUMMY_PARS.PARAM_NAMES_FLAT]
-        
-        res_classif = self.class_nuvk(train_df) if 'nuvk' in self.prior_type.lower() else self.class_bpt(train_df)
+        self.templates_df = templs_score_df[
+            ["name", "num", "score", "Dataset", self.config["redshift_col"]]
+            + _DUMMY_PARS.PARAM_NAMES_FLAT
+        ]
+
+        res_classif = (
+            self.class_nuvk(train_df)
+            if "nuvk" in self.prior_type.lower()
+            else self.class_bpt(train_df)
+        )
         self.model = dict(
             fo_arr=self.fo_arr,
             kt_arr=self.kt_arr,
@@ -1196,9 +1202,9 @@ class ShireInformer(CatInformer):
             a_arr=np.array(res_classif[1]),
             km_arr=np.array(res_classif[2]),
             mo=self.m0[0],
-            nt_array=self.nt_array
+            nt_array=self.nt_array,
         )
-        if 'nuvk' in self.prior_type.lower(): 
+        if "nuvk" in self.prior_type.lower():
             self.e0_pars = PriorParams(
                 0,
                 self.refcategs[0],
@@ -1209,7 +1215,7 @@ class ShireInformer(CatInformer):
                 self.model["km_arr"][0],
                 self.model["mo"],
                 self.model["nt_array"][0],
-                (4.25, jnp.inf)
+                (4.25, jnp.inf),
             )
             self.sbcd_pars = PriorParams(
                 1,
@@ -1221,7 +1227,7 @@ class ShireInformer(CatInformer):
                 self.model["km_arr"][1],
                 self.model["mo"],
                 self.model["nt_array"][1],
-                (1.9, 4.25)
+                (1.9, 4.25),
             )
             # self.sbc_pars = PriorParams(
             #     1,
@@ -1246,14 +1252,14 @@ class ShireInformer(CatInformer):
             self.irr_pars = PriorParams(
                 2,
                 self.refcategs[2],
-                1.0-(self.model["fo_arr"][0] + self.model["fo_arr"][1]),
+                1.0 - (self.model["fo_arr"][0] + self.model["fo_arr"][1]),
                 -99,
                 self.model["zo_arr"][2],
                 self.model["a_arr"][2],
                 self.model["km_arr"][2],
                 self.model["mo"],
                 self.model["nt_array"][2],
-                (-jnp.inf, 1.9)
+                (-jnp.inf, 1.9),
             )
         else:
             self.sf_pars = PriorParams(
@@ -1266,7 +1272,7 @@ class ShireInformer(CatInformer):
                 self.model["km_arr"][0],
                 self.model["mo"],
                 self.model["nt_array"][0],
-                None
+                None,
             )
             self.agn_pars = PriorParams(
                 1,
@@ -1278,7 +1284,7 @@ class ShireInformer(CatInformer):
                 self.model["km_arr"][1],
                 self.model["mo"],
                 self.model["nt_array"][1],
-                None
+                None,
             )
             self.com_pars = PriorParams(
                 2,
@@ -1290,24 +1296,28 @@ class ShireInformer(CatInformer):
                 self.model["km_arr"][2],
                 self.model["mo"],
                 self.model["nt_array"][2],
-                None
+                None,
             )
             self.nc_pars = PriorParams(
                 3,
                 self.refcategs[3],
-                1-(self.model["fo_arr"][0]+self.model["fo_arr"][1]+self.model["fo_arr"][2]),
+                1
+                - (
+                    self.model["fo_arr"][0]
+                    + self.model["fo_arr"][1]
+                    + self.model["fo_arr"][2]
+                ),
                 -99,
                 self.model["zo_arr"][3],
                 self.model["a_arr"][3],
                 self.model["km_arr"][3],
                 self.model["mo"],
                 self.model["nt_array"][3],
-                None
+                None,
             )
-        
+
         self.add_data("model", self.model)
         self.add_handle("templates", data=self.templates_df, path=self.config.output)
-
 
     def inform(self, training_data):
         """The main interface method for Informers
@@ -1340,140 +1350,172 @@ class ShireInformer(CatInformer):
         self.finalize()
         return self.get_handle("model"), self.get_handle("templates")
 
-    def plot_colrs_templates(self, hue='CAT_NUVK', style='Dataset', order=None, trainlabel='Colours/redshift'):
-        if order is None and hue=='CAT_NUVK':
-            order=self.refcategs
+    def plot_colrs_templates(
+        self, hue="CAT_NUVK", style="Dataset", order=None, trainlabel="Colours/redshift"
+    ):
+        if order is None and hue == "CAT_NUVK":
+            order = self.refcategs
 
         all_tsels_df = self._nuvk_classif_nodustvar()
         train_df = pd.DataFrame(
             data=jnp.column_stack(
-                (self.mags[:, :-1]-self.mags[:, 1:], self.refmags, self.szs)
+                (self.mags[:, :-1] - self.mags[:, 1:], self.refmags, self.szs)
             ),
-            columns=self.color_names+[self.config.ref_band, self.config.redshift_col]
+            columns=self.color_names + [self.config.ref_band, self.config.redshift_col],
         )
 
-        leg1 = mlines.Line2D([], [], color='gray', label=trainlabel, marker='o', markersize=6, alpha=0.7, ls='')
+        leg1 = mlines.Line2D(
+            [],
+            [],
+            color="gray",
+            label=trainlabel,
+            marker="o",
+            markersize=6,
+            alpha=0.7,
+            ls="",
+        )
         fig_list = []
         for ix, (c1, c2) in enumerate(zip(self.color_names[:-1], self.color_names[1:])):
-            f,a = plt.subplots(1,1, constrained_layout=True)
+            f, a = plt.subplots(1, 1, constrained_layout=True)
             # Create a legend for the first line.
-            
+
             sns.scatterplot(
                 data=train_df,
                 x=c1,
                 y=c2,
-                c='gray',
-                size='redshift',
+                c="gray",
+                size="redshift",
                 sizes=(10, 500),
                 ax=a,
                 legend=False,
-                alpha=0.1
+                alpha=0.1,
             )
-            
+
             sns.scatterplot(
                 data=all_tsels_df,
                 x=c1,
                 y=c2,
                 ax=a,
-                size='z_p',
+                size="z_p",
                 sizes=(10, 500),
                 alpha=0.25,
                 hue=hue,
                 hue_order=order,
                 style=style,
-                legend='brief'
+                legend="brief",
             )
             a.grid()
 
             handles, labels = a.get_legend_handles_labels()
-            a.legend(handles=[handles[0]]+[leg1]+handles, labels=['Training set']+[trainlabel]+labels)
+            a.legend(
+                handles=[handles[0]] + [leg1] + handles,
+                labels=["Training set"] + [trainlabel] + labels,
+            )
             fig_list.append(f)
             plt.show()
         return fig_list
 
-
-    def plot_colrs_templates_wdust(self, hue='CAT_NUVK', style='Dataset', order=None, trainlabel='Colours/redshift'):
-        if order is None and hue=='CAT_NUVK':
-            order=self.refcategs
+    def plot_colrs_templates_wdust(
+        self, hue="CAT_NUVK", style="Dataset", order=None, trainlabel="Colours/redshift"
+    ):
+        if order is None and hue == "CAT_NUVK":
+            order = self.refcategs
 
         all_tsels_df = self._nuvk_classif()
         train_df = pd.DataFrame(
             data=jnp.column_stack(
-                (self.mags[:, :-1]-self.mags[:, 1:], self.refmags, self.szs)
+                (self.mags[:, :-1] - self.mags[:, 1:], self.refmags, self.szs)
             ),
-            columns=self.color_names+[self.config.ref_band, self.config.redshift_col]
+            columns=self.color_names + [self.config.ref_band, self.config.redshift_col],
         )
 
-        leg1 = mlines.Line2D([], [], color='gray', label=trainlabel, marker='o', markersize=6, alpha=0.7, ls='')
+        leg1 = mlines.Line2D(
+            [],
+            [],
+            color="gray",
+            label=trainlabel,
+            marker="o",
+            markersize=6,
+            alpha=0.7,
+            ls="",
+        )
         fig_list = []
         for ix, (c1, c2) in enumerate(zip(self.color_names[:-1], self.color_names[1:])):
-            f,a = plt.subplots(1,1, constrained_layout=True)
+            f, a = plt.subplots(1, 1, constrained_layout=True)
             # Create a legend for the first line.
-            
+
             sns.scatterplot(
                 data=train_df,
                 x=c1,
                 y=c2,
-                c='gray',
-                size='redshift',
+                c="gray",
+                size="redshift",
                 sizes=(10, 500),
                 ax=a,
                 legend=False,
-                alpha=0.1
+                alpha=0.1,
             )
-            
+
             sns.scatterplot(
                 data=all_tsels_df,
                 x=c1,
                 y=c2,
                 ax=a,
-                size='z_p',
+                size="z_p",
                 sizes=(10, 500),
                 alpha=0.25,
                 hue=hue,
                 hue_order=order,
                 style=style,
-                legend='brief'
+                legend="brief",
             )
             a.grid()
 
             handles, labels = a.get_legend_handles_labels()
-            a.legend(handles=[handles[0]]+[leg1]+handles, labels=['Training set']+[trainlabel]+labels)
+            a.legend(
+                handles=[handles[0]] + [leg1] + handles,
+                labels=["Training set"] + [trainlabel] + labels,
+            )
             fig_list.append(f)
             plt.show()
         return fig_list
 
-
-    def hist_colrs_templates(self, hue='Dataset', trainlabel='Training data', bins=60, **kwargs):
+    def hist_colrs_templates(
+        self, hue="Dataset", trainlabel="Training data", bins=60, **kwargs
+    ):
         all_tsels_df = self._nuvk_classif_nodustvar()
         train_df = pd.DataFrame(
             data=jnp.column_stack(
-                (self.mags[:, :-1]-self.mags[:, 1:], self.refmags, self.szs)
+                (self.mags[:, :-1] - self.mags[:, 1:], self.refmags, self.szs)
             ),
-            columns=self.color_names+[self.config.ref_band, self.config.redshift_col]
+            columns=self.color_names + [self.config.ref_band, self.config.redshift_col],
         )
 
-        train_patch = mpatches.Patch(edgecolor='k', facecolor='grey', label=trainlabel, alpha=0.7)
+        train_patch = mpatches.Patch(
+            edgecolor="k", facecolor="grey", label=trainlabel, alpha=0.7
+        )
 
         list_edges = []
         fig_list = []
         for idc, c in enumerate(self.color_names):
             _arr = np.array(train_df[c])
             H_data_1D, _edges1d = np.histogram(_arr[np.isfinite(_arr)], bins=bins)
-            H_templ_1d, _edges1d = np.histogram(np.array(all_tsels_df[c]), bins=_edges1d) 
+            H_templ_1d, _edges1d = np.histogram(
+                np.array(all_tsels_df[c]), bins=_edges1d
+            )
             list_edges.append(_edges1d)
-            
-            f,a = plt.subplots(1,1)
+
+            f, a = plt.subplots(1, 1)
 
             sns.histplot(
                 data=train_df,
                 x=c,
                 bins=_edges1d,
                 label=trainlabel,
-                color='grey',
+                color="grey",
                 ax=a,
                 legend=False,
-                **kwargs
+                **kwargs,
             )
 
             sns.histplot(
@@ -1484,51 +1526,61 @@ class ShireInformer(CatInformer):
                 alpha=0.5,
                 ax=a,
                 legend=True,
-                **kwargs
+                **kwargs,
             )
 
             old_legend = a.get_legend()
             handles = old_legend.legend_handles
-            labels = [t.get_text()+' templates' for t in old_legend.get_texts()]
+            labels = [t.get_text() + " templates" for t in old_legend.get_texts()]
             title = old_legend.get_title().get_text()
-            
-            a.legend(handles=[train_patch]+handles, labels=[trainlabel]+labels, title=title, loc='best')
+
+            a.legend(
+                handles=[train_patch] + handles,
+                labels=[trainlabel] + labels,
+                title=title,
+                loc="best",
+            )
             fig_list.append(f)
-            
+
             plt.show()
         return fig_list
 
-
-    def hist_colrs_templates_wdust(self, hue='Dataset', trainlabel='Training data', bins=60, **kwargs):
+    def hist_colrs_templates_wdust(
+        self, hue="Dataset", trainlabel="Training data", bins=60, **kwargs
+    ):
         all_tsels_df = self._nuvk_classif()
         train_df = pd.DataFrame(
             data=jnp.column_stack(
-                (self.mags[:, :-1]-self.mags[:, 1:], self.refmags, self.szs)
+                (self.mags[:, :-1] - self.mags[:, 1:], self.refmags, self.szs)
             ),
-            columns=self.color_names+[self.config.ref_band, self.config.redshift_col]
+            columns=self.color_names + [self.config.ref_band, self.config.redshift_col],
         )
 
-        train_patch = mpatches.Patch(edgecolor='k', facecolor='grey', label=trainlabel, alpha=0.7)
+        train_patch = mpatches.Patch(
+            edgecolor="k", facecolor="grey", label=trainlabel, alpha=0.7
+        )
 
         list_edges = []
         fig_list = []
         for idc, c in enumerate(self.color_names):
             _arr = np.array(train_df[c])
             H_data_1D, _edges1d = np.histogram(_arr[np.isfinite(_arr)], bins=bins)
-            H_templ_1d, _edges1d = np.histogram(np.array(all_tsels_df[c]), bins=_edges1d) 
+            H_templ_1d, _edges1d = np.histogram(
+                np.array(all_tsels_df[c]), bins=_edges1d
+            )
             list_edges.append(_edges1d)
-            
-            f,a = plt.subplots(1,1)
+
+            f, a = plt.subplots(1, 1)
 
             sns.histplot(
                 data=train_df,
                 x=c,
                 bins=_edges1d,
                 label=trainlabel,
-                color='grey',
+                color="grey",
                 ax=a,
                 legend=False,
-                **kwargs
+                **kwargs,
             )
 
             sns.histplot(
@@ -1539,57 +1591,70 @@ class ShireInformer(CatInformer):
                 alpha=0.7,
                 ax=a,
                 legend=True,
-                **kwargs
+                **kwargs,
             )
 
             old_legend = a.get_legend()
             handles = old_legend.legend_handles
-            labels = [t.get_text()+' templates' for t in old_legend.get_texts()]
+            labels = [t.get_text() + " templates" for t in old_legend.get_texts()]
             title = old_legend.get_title().get_text()
-            
-            a.legend(handles=[train_patch]+handles, labels=[trainlabel]+labels, title=title, loc='best')
+
+            a.legend(
+                handles=[train_patch] + handles,
+                labels=[trainlabel] + labels,
+                title=title,
+                loc="best",
+            )
             fig_list.append(f)
-            
+
             plt.show()
         return fig_list
 
-
-    def hist_redshifts_templates(self, hue='Dataset', **kwargs):
-        f, a = plt.subplots(1,1)
-        sns.histplot(data=self.templates_df, x='self.config.redshift_col', ax=a, hue=hue, **kwargs)
+    def hist_redshifts_templates(self, hue="Dataset", **kwargs):
+        f, a = plt.subplots(1, 1)
+        sns.histplot(
+            data=self.templates_df,
+            x="self.config.redshift_col",
+            ax=a,
+            hue=hue,
+            **kwargs,
+        )
         plt.show()
         return f
-
 
     def plot_sfh_templates(self, normalise=False, dataset=None):
         self._load_training()
 
-        from .template import vmap_mean_sfr, T_ARR
+        from .template import T_ARR, vmap_mean_sfr
 
-        srcs = np.unique(self.templates_df['Dataset'].values) if dataset is None else np.array([dataset])
+        srcs = (
+            np.unique(self.templates_df["Dataset"].values)
+            if dataset is None
+            else np.array([dataset])
+        )
         pars_arr = jnp.array(self.templates_df[_DUMMY_PARS.PARAM_NAMES_FLAT])
-        
-        fcolors = mpl.colormaps['tab10'].colors
+
+        fcolors = mpl.colormaps["tab10"].colors
         cdict = {_src: fcolors[isrc] for isrc, _src in enumerate(srcs)}
-        #fcolors = plt.cm.rainbow(np.linspace(0, 1, len(srcs)))
-        #cdict = dict(zip(srcs, fcolors, strict=True))
+        # fcolors = plt.cm.rainbow(np.linspace(0, 1, len(srcs)))
+        # cdict = dict(zip(srcs, fcolors, strict=True))
 
         all_sfh = vmap_mean_sfr(pars_arr)
-        _min, _max = all_sfh.max()/1e6, all_sfh.max()*1.1
-        f, a = plt.subplots(1,1)
-        for sfh, src in zip(all_sfh, self.templates_df['Dataset'], strict=True):
+        _min, _max = all_sfh.max() / 1e6, all_sfh.max() * 1.1
+        f, a = plt.subplots(1, 1)
+        for sfh, src in zip(all_sfh, self.templates_df["Dataset"], strict=True):
             if src in srcs:
                 if normalise:
                     maxsfh = jnp.nanmax(sfh)
-                    a.plot(T_ARR, sfh/maxsfh, lw=1, ls='-', c=cdict[src])
-                    a.set_ylabel('SFR/SFR max [-]')
+                    a.plot(T_ARR, sfh / maxsfh, lw=1, ls="-", c=cdict[src])
+                    a.set_ylabel("SFR/SFR max [-]")
                 else:
-                    a.plot(T_ARR, sfh, lw=1, ls='-', c=cdict[src])
-                    a.set_ylabel('SFR '+r"$[\mathrm{M_\odot.yr}^{-1}]$")
-                a.set_xlabel('Age of the Universe [Gyr]')
-                a.set_title('SFH of photo-z templates')
+                    a.plot(T_ARR, sfh, lw=1, ls="-", c=cdict[src])
+                    a.set_ylabel("SFR " + r"$[\mathrm{M_\odot.yr}^{-1}]$")
+                a.set_xlabel("Age of the Universe [Gyr]")
+                a.set_title("SFH of photo-z templates")
                 a.set_ylim(_min, _max)
-                a.set_yscale('log')
+                a.set_yscale("log")
 
         legs = []
         for src, colr in cdict.items():
@@ -1599,57 +1664,96 @@ class ShireInformer(CatInformer):
         plt.show()
         return f
 
-
     def _nuvk_classif(self):
         _mod_names = self.refcategs
         self._load_training()
         all_tsels_df = self._load_templates()
-        all_tsels_df['CAT_NUVK'] = np.array( _mod_names[ _n] for _n in self.prior_mod(jnp.array(all_tsels_df['NUVK'].values)) )
-        #self.nt_array = np.array([ np.count_nonzero(all_tsels_df['CAT_NUVK'] == _typ)//self.pzs.shape[0]  for _typ in _mod_names ])
+        all_tsels_df["CAT_NUVK"] = np.array(
+            _mod_names[_n]
+            for _n in self.prior_mod(jnp.array(all_tsels_df["NUVK"].values))
+        )
+        # self.nt_array = np.array([ np.count_nonzero(all_tsels_df['CAT_NUVK'] == _typ)//self.pzs.shape[0]  for _typ in _mod_names ])
         return all_tsels_df
 
     def _nuvk_classif_nodustvar(self):
         _mod_names = self.refcategs
         self._load_training()
         all_tsels_df = self._load_templates_nodustvar()
-        all_tsels_df['CAT_NUVK'] = np.array( _mod_names[ _n] for _n in self.prior_mod(jnp.array(all_tsels_df['NUVK'].values)) )
-        #self.nt_array = np.array([ np.count_nonzero(all_tsels_df['CAT_NUVK'] == _typ)//self.pzs.shape[0]  for _typ in _mod_names ])
+        all_tsels_df["CAT_NUVK"] = np.array(
+            _mod_names[_n]
+            for _n in self.prior_mod(jnp.array(all_tsels_df["NUVK"].values))
+        )
+        # self.nt_array = np.array([ np.count_nonzero(all_tsels_df['CAT_NUVK'] == _typ)//self.pzs.shape[0]  for _typ in _mod_names ])
         return all_tsels_df
 
     def _bpt_classif(self):
         all_tsels_df = self._nuvk_classif()
         all_tsels_df["log([OIII]/[Hb])"] = np.where(
-            np.logical_and(all_tsels_df["AGN_[OIII]_5008.24_REW"] > 0.0, all_tsels_df["Balmer_HI_4862.68_REW"] > 0.0),
-            np.log10(all_tsels_df["AGN_[OIII]_5008.24_REW"] / all_tsels_df["Balmer_HI_4862.68_REW"]),
-            np.nan
+            np.logical_and(
+                all_tsels_df["AGN_[OIII]_5008.24_REW"] > 0.0,
+                all_tsels_df["Balmer_HI_4862.68_REW"] > 0.0,
+            ),
+            np.log10(
+                all_tsels_df["AGN_[OIII]_5008.24_REW"]
+                / all_tsels_df["Balmer_HI_4862.68_REW"]
+            ),
+            np.nan,
         )
 
         all_tsels_df["log([NII]/[Ha])"] = np.where(
-            np.logical_and(all_tsels_df["AGN_[NII]_6585.27_REW"] > 0.0, all_tsels_df["Balmer_HI_6564.61_REW"] > 0.0),
-            np.log10(all_tsels_df["AGN_[NII]_6585.27_REW"] / all_tsels_df["Balmer_HI_6564.61_REW"]),
-            np.nan
+            np.logical_and(
+                all_tsels_df["AGN_[NII]_6585.27_REW"] > 0.0,
+                all_tsels_df["Balmer_HI_6564.61_REW"] > 0.0,
+            ),
+            np.log10(
+                all_tsels_df["AGN_[NII]_6585.27_REW"]
+                / all_tsels_df["Balmer_HI_6564.61_REW"]
+            ),
+            np.nan,
         )
 
         all_tsels_df["log([SII]/[Ha])"] = np.where(
-            np.logical_and(all_tsels_df["AGN_[SII]_6718.29_REW"] > 0.0, all_tsels_df["Balmer_HI_6564.61_REW"] > 0.0),
-            np.log10(all_tsels_df["AGN_[SII]_6718.29_REW"] / all_tsels_df["Balmer_HI_6564.61_REW"]),
-            np.nan
+            np.logical_and(
+                all_tsels_df["AGN_[SII]_6718.29_REW"] > 0.0,
+                all_tsels_df["Balmer_HI_6564.61_REW"] > 0.0,
+            ),
+            np.log10(
+                all_tsels_df["AGN_[SII]_6718.29_REW"]
+                / all_tsels_df["Balmer_HI_6564.61_REW"]
+            ),
+            np.nan,
         )
 
         all_tsels_df["log([OI]/[Ha])"] = np.where(
-            np.logical_and(all_tsels_df["SF_[OI]_6302.046_REW"] > 0.0, all_tsels_df["Balmer_HI_6564.61_REW"] > 0.0),
-            np.log10(all_tsels_df["SF_[OI]_6302.046_REW"] / all_tsels_df["Balmer_HI_6564.61_REW"]),
-            np.nan
+            np.logical_and(
+                all_tsels_df["SF_[OI]_6302.046_REW"] > 0.0,
+                all_tsels_df["Balmer_HI_6564.61_REW"] > 0.0,
+            ),
+            np.log10(
+                all_tsels_df["SF_[OI]_6302.046_REW"]
+                / all_tsels_df["Balmer_HI_6564.61_REW"]
+            ),
+            np.nan,
         )
 
         all_tsels_df["log([OIII]/[OII])"] = np.where(
-            np.logical_and(all_tsels_df["AGN_[OIII]_5008.24_REW"] > 0.0, all_tsels_df["SF_[OII]_3728.48_REW"] > 0),
-            np.log10(all_tsels_df["AGN_[OIII]_5008.24_REW"] / all_tsels_df["SF_[OII]_3728.48_REW"]),
-            np.nan
+            np.logical_and(
+                all_tsels_df["AGN_[OIII]_5008.24_REW"] > 0.0,
+                all_tsels_df["SF_[OII]_3728.48_REW"] > 0,
+            ),
+            np.log10(
+                all_tsels_df["AGN_[OIII]_5008.24_REW"]
+                / all_tsels_df["SF_[OII]_3728.48_REW"]
+            ),
+            np.nan,
         )
 
         cat_nii = []
-        for x, y in zip(all_tsels_df["log([NII]/[Ha])"], all_tsels_df["log([OIII]/[Hb])"], strict=False):
+        for x, y in zip(
+            all_tsels_df["log([NII]/[Ha])"],
+            all_tsels_df["log([OIII]/[Hb])"],
+            strict=False,
+        ):
             if not (np.isfinite(x) and np.isfinite(y)):
                 cat_nii.append("NC")
             elif y >= Ke01_nii(x) or x >= 0.47:
@@ -1661,12 +1765,16 @@ class ShireInformer(CatInformer):
         all_tsels_df["CAT_NII"] = np.array(cat_nii)
 
         cat_sii = []
-        for x, y in zip(all_tsels_df["log([SII]/[Ha])"], all_tsels_df["log([OIII]/[Hb])"], strict=False):
+        for x, y in zip(
+            all_tsels_df["log([SII]/[Ha])"],
+            all_tsels_df["log([OIII]/[Hb])"],
+            strict=False,
+        ):
             if not (np.isfinite(x) and np.isfinite(y)):
                 cat_sii.append("NC")
             elif y >= Ke06_sii(x):
                 cat_sii.append("Seyferts")
-            elif y >= Ke01_sii(x) or x>=0.32:
+            elif y >= Ke01_sii(x) or x >= 0.32:
                 cat_sii.append("LINER")
             else:
                 cat_sii.append("Star-forming")
@@ -1674,7 +1782,11 @@ class ShireInformer(CatInformer):
         all_tsels_df["CAT_SII"] = np.array(cat_sii)
 
         cat_oi = []
-        for x, y in zip(all_tsels_df["log([OI]/[Ha])"], all_tsels_df["log([OIII]/[Hb])"], strict=False):
+        for x, y in zip(
+            all_tsels_df["log([OI]/[Ha])"],
+            all_tsels_df["log([OIII]/[Hb])"],
+            strict=False,
+        ):
             if not (np.isfinite(x) and np.isfinite(y)):
                 cat_oi.append("NC")
             elif y >= Ke06_oi(x):
@@ -1687,7 +1799,11 @@ class ShireInformer(CatInformer):
         all_tsels_df["CAT_OI"] = np.array(cat_oi)
 
         cat_oii = []
-        for x, y in zip(all_tsels_df["log([OI]/[Ha])"], all_tsels_df["log([OIII]/[OII])"], strict=False):
+        for x, y in zip(
+            all_tsels_df["log([OI]/[Ha])"],
+            all_tsels_df["log([OIII]/[OII])"],
+            strict=False,
+        ):
             if not (np.isfinite(x) and np.isfinite(y)):
                 cat_oii.append("NC")
             elif y >= lim_seyf_liner(x):
@@ -1701,130 +1817,165 @@ class ShireInformer(CatInformer):
 
         return all_tsels_df
 
-
     def plot_bpt_templates(self):
         all_tsels_df = self._bpt_classif()
         cat_x_y = [
             ("CAT_NII", "log([NII]/[Ha])", "log([OIII]/[Hb])"),
             ("CAT_SII", "log([SII]/[Ha])", "log([OIII]/[Hb])"),
             ("CAT_OI", "log([OI]/[Ha])", "log([OIII]/[Hb])"),
-            ("CAT_OIII/OIIvsOI", "log([OI]/[Ha])", "log([OIII]/[OII])")
+            ("CAT_OIII/OIIvsOI", "log([OI]/[Ha])", "log([OIII]/[OII])"),
         ]
         fig_list = []
         for cat, x, y in cat_x_y:
-            if np.any(np.isfinite(all_tsels_df[x])) and np.any(np.isfinite(all_tsels_df[y])):
+            if np.any(np.isfinite(all_tsels_df[x])) and np.any(
+                np.isfinite(all_tsels_df[y])
+            ):
                 f, a = plt.subplots(1, 1)
                 sns.scatterplot(
                     data=all_tsels_df,
                     x=x,
                     y=y,
                     hue=cat,
-                    size='z_p',
+                    size="z_p",
                     sizes=(10, 100),
                     alpha=0.5,
-                    ax=a
+                    ax=a,
                 )
 
                 if "NII" in cat:
-                    _xa = np.linspace(np.nanmin(all_tsels_df[x]), 0.05, 100, endpoint=False)
-                    a.plot(_xa, Ka03_nii(_xa), 'k-', lw=1)
-                    _xe = np.linspace(np.nanmin(all_tsels_df[x]), 0.47, 100, endpoint=False)
-                    a.plot(_xe, Ke01_nii(_xe), 'k:', lw=1)
+                    _xa = np.linspace(
+                        np.nanmin(all_tsels_df[x]), 0.05, 100, endpoint=False
+                    )
+                    a.plot(_xa, Ka03_nii(_xa), "k-", lw=1)
+                    _xe = np.linspace(
+                        np.nanmin(all_tsels_df[x]), 0.47, 100, endpoint=False
+                    )
+                    a.plot(_xe, Ke01_nii(_xe), "k:", lw=1)
                 elif "SII" in cat:
-                    _x1 = np.linspace(np.nanmin(all_tsels_df[x]), 0.32, 100, endpoint=False)
-                    a.plot(_x1, Ke01_sii(_x1), 'k-', lw=1)
-                    _x6 = np.linspace(np.nanmin(all_tsels_df[x]), np.nanmax(all_tsels_df[x]), 100, endpoint=True)
-                    a.plot(_x6, Ke06_sii(_x6), 'k:', lw=1)
+                    _x1 = np.linspace(
+                        np.nanmin(all_tsels_df[x]), 0.32, 100, endpoint=False
+                    )
+                    a.plot(_x1, Ke01_sii(_x1), "k-", lw=1)
+                    _x6 = np.linspace(
+                        np.nanmin(all_tsels_df[x]),
+                        np.nanmax(all_tsels_df[x]),
+                        100,
+                        endpoint=True,
+                    )
+                    a.plot(_x6, Ke06_sii(_x6), "k:", lw=1)
                 elif "OII" in cat:
-                    _x = np.linspace(np.nanmin(all_tsels_df[x]), np.nanmax(all_tsels_df[x]), 100, endpoint=True)
-                    a.plot(_x, lim_HII_comp(_x), 'k-', lw=1)
-                    a.plot(_x, lim_seyf_liner(_x), 'k:', lw=1)
+                    _x = np.linspace(
+                        np.nanmin(all_tsels_df[x]),
+                        np.nanmax(all_tsels_df[x]),
+                        100,
+                        endpoint=True,
+                    )
+                    a.plot(_x, lim_HII_comp(_x), "k-", lw=1)
+                    a.plot(_x, lim_seyf_liner(_x), "k:", lw=1)
                 else:
-                    _x1 = np.linspace(np.nanmin(all_tsels_df[x]), -0.59, 100, endpoint=False)
-                    a.plot(_x1, Ke01_oi(_x1), 'k-', lw=1)
-                    _x6 = np.linspace(np.nanmin(all_tsels_df[x]), np.nanmax(all_tsels_df[x]), 100, endpoint=True)
-                    a.plot(_x6, Ke06_oi(_x6), 'k:', lw=1)
+                    _x1 = np.linspace(
+                        np.nanmin(all_tsels_df[x]), -0.59, 100, endpoint=False
+                    )
+                    a.plot(_x1, Ke01_oi(_x1), "k-", lw=1)
+                    _x6 = np.linspace(
+                        np.nanmin(all_tsels_df[x]),
+                        np.nanmax(all_tsels_df[x]),
+                        100,
+                        endpoint=True,
+                    )
+                    a.plot(_x6, Ke06_oi(_x6), "k:", lw=1)
                 a.set_xlim(np.nanmin(all_tsels_df[x]), np.nanmax(all_tsels_df[x]))
                 a.set_ylim(np.nanmin(all_tsels_df[y]), np.nanmax(all_tsels_df[y]))
                 fig_list.append(f)
                 plt.show()
         return fig_list
 
-
-    def plot_templ_seds(self, redshifts=None, wlmin=None, wlmax=None, ymin=None, ymax=None):
+    def plot_templ_seds(
+        self, redshifts=None, wlmin=None, wlmax=None, ymin=None, ymax=None
+    ):
         if redshifts is None:
-            redshifts = jnp.linspace(self.config.zmin, self.config.zmax, 6, endpoint=True)
-        elif isinstance(redshifts, (int, float, jnp.float32, jnp.float64, np.float32, np.float64)):
+            redshifts = jnp.linspace(
+                self.config.zmin, self.config.zmax, 6, endpoint=True
+            )
+        elif isinstance(
+            redshifts, (int, float, jnp.float32, jnp.float64, np.float32, np.float64)
+        ):
             redshifts = jnp.array([redshifts])
         elif isinstance(redshifts, (list, tuple, np.ndarray)):
             redshifts = jnp.array(redshifts)
         else:
-            assert isinstance(redshifts, jnp.ndarray), "Please specify the redshift as a single value or a list, tuple, numpy array or jax array of values."
+            assert isinstance(
+                redshifts, jnp.ndarray
+            ), "Please specify the redshift as a single value or a list, tuple, numpy array or jax array of values."
 
         if wlmin is None:
-            wlmin=self.config.wlmin
+            wlmin = self.config.wlmin
         if wlmax is None:
-            wlmax=self.config.wlmax+self.config.dwl
+            wlmax = self.config.wlmax + self.config.dwl
 
         wls, transm_arr = self._load_filters()
         templ_pars = jnp.array(self.templates_df[_DUMMY_PARS.PARAM_NAMES_FLAT])
         templ_zref = jnp.array(self.templates_df[self.config.redshift_col])
         sspdata = load_ssp(
-            os.path.abspath(
-                os.path.join(
-                    self.data_path,
-                    "SSP",
-                    self.config.ssp_file
-                )
-            )
+            os.path.abspath(os.path.join(self.data_path, "SSP", self.config.ssp_file))
         )
         if "sps" in self.config.templ_type.lower():
             restframe_fnus = lsunPerHz_to_fnu_noU(
-                vmap_mean_spectrum(wls, templ_pars, redshifts, sspdata),
-                0.001
+                vmap_mean_spectrum(wls, templ_pars, redshifts, sspdata), 0.001
             )
             nuvk = v_nuvk_dusty(templ_pars, redshifts, sspdata)
-            _selnorm = jnp.logical_and(wls>=3950, wls<=4000)
+            _selnorm = jnp.logical_and(wls >= 3950, wls <= 4000)
             norms = jnp.nanmean(restframe_fnus[:, :, _selnorm], axis=2)
-            restframe_fnus = restframe_fnus/jnp.expand_dims(jnp.squeeze(norms), 2)
+            restframe_fnus = restframe_fnus / jnp.expand_dims(jnp.squeeze(norms), 2)
         else:
             _vspec = vmap(mean_spectrum, in_axes=(None, 0, 0, None))
             _vnuvk = vmap(calc_nuvk_dusty, in_axes=(0, 0, None))
             restframe_fnus = lsunPerHz_to_fnu_noU(
-                _vspec(wls, templ_pars, templ_zref, sspdata),
-                0.001
+                _vspec(wls, templ_pars, templ_zref, sspdata), 0.001
             )
             nuvk = _vnuvk(templ_pars, templ_zref, sspdata)
-            _selnorm = jnp.logical_and(wls>=3950, wls<=4000)
+            _selnorm = jnp.logical_and(wls >= 3950, wls <= 4000)
             norms = jnp.nanmean(restframe_fnus[:, _selnorm], axis=1)
-            restframe_fnus = restframe_fnus/jnp.expand_dims(jnp.squeeze(norms), 1)
-        
-        colrs = mpl.colormaps['tab10'].colors
+            restframe_fnus = restframe_fnus / jnp.expand_dims(jnp.squeeze(norms), 1)
+
+        colrs = mpl.colormaps["tab10"].colors
         clrdict = {_categ: colrs[icat] for icat, _categ in enumerate(self.refcategs)}
 
         filtcols = plt.cm.rainbow(np.linspace(0, 1, transm_arr.shape[0]))
         figlist = []
         for iz, z in enumerate(redshifts):
-            f, a = plt.subplots(1,1, figsize=(7, 4), constrained_layout=True)
+            f, a = plt.subplots(1, 1, figsize=(7, 4), constrained_layout=True)
             if "sps" in self.config.templ_type.lower():
-                for fnu, _nuvk in zip(restframe_fnus[:, iz, :], nuvk[:, iz], strict=True):
-                    _n = self.prior_mod(_nuvk) 
-                    classnuvk = self.refcategs[ _n]
-                    a.plot(*convert_flux_toobsframe(wls, fnu, z), c=clrdict[classnuvk], alpha=0.6)
+                for fnu, _nuvk in zip(
+                    restframe_fnus[:, iz, :], nuvk[:, iz], strict=True
+                ):
+                    _n = self.prior_mod(_nuvk)
+                    classnuvk = self.refcategs[_n]
+                    a.plot(
+                        *convert_flux_toobsframe(wls, fnu, z),
+                        c=clrdict[classnuvk],
+                        alpha=0.6,
+                    )
             else:
                 for fnu, _nuvk in zip(restframe_fnus, nuvk, strict=True):
-                    _n = self.prior_mod(_nuvk) 
-                    classnuvk = self.refcategs[ _n]
-                    a.plot(*convert_flux_toobsframe(wls, fnu, z), c=clrdict[classnuvk], alpha=0.6)
-            a.set_xlabel(r'Observed wavelength $\mathrm{[\AA]}$')
-            a.set_ylabel(r'Normalized Spectral Energy Density [-]') #$\mathrm{[erg.s^{-1}.cm^{-2}.Hz^{-1}]}$')
+                    _n = self.prior_mod(_nuvk)
+                    classnuvk = self.refcategs[_n]
+                    a.plot(
+                        *convert_flux_toobsframe(wls, fnu, z),
+                        c=clrdict[classnuvk],
+                        alpha=0.6,
+                    )
+            a.set_xlabel(r"Observed wavelength $\mathrm{[\AA]}$")
+            a.set_ylabel(
+                r"Normalized Spectral Energy Density [-]"
+            )  # $\mathrm{[erg.s^{-1}.cm^{-2}.Hz^{-1}]}$')
             aa = a.twinx()
             for trans, fcol in zip(transm_arr, filtcols, strict=True):
                 aa.plot(wls, trans, c=tuple(fcol), lw=1)
                 aa.fill_between(wls, trans, alpha=0.3, color=tuple(fcol), lw=1)
-            aa.set_ylabel(r'Filter transmission / effective area [- / $\mathrm{m^2}$]')
-            #a.set_xscale('log')
-            a.set_yscale('log')
+            aa.set_ylabel(r"Filter transmission / effective area [- / $\mathrm{m^2}$]")
+            # a.set_xscale('log')
+            a.set_yscale("log")
             a.set_xlim(wlmin, wlmax)
             if ymin is not None and ymax is not None:
                 a.set_ylim(ymin, ymax)
@@ -1834,61 +1985,63 @@ class ShireInformer(CatInformer):
                 _line = mlines.Line2D([], [], color=_colrs, label=_cat)
                 _legends.append(_line)
             a.legend(handles=_legends)
-            a.set_title(r'SED templates at $z=$'+f"{z:.2f}")
-            secax = a.secondary_xaxis('top', functions=(lambda wl: wl/(1+z), lambda wl: wl*(1+z)))
-            secax.set_xlabel(r'Resframe wavelength $\mathrm{[\AA]}$')
+            a.set_title(r"SED templates at $z=$" + f"{z:.2f}")
+            secax = a.secondary_xaxis(
+                "top", functions=(lambda wl: wl / (1 + z), lambda wl: wl * (1 + z))
+            )
+            secax.set_xlabel(r"Resframe wavelength $\mathrm{[\AA]}$")
             figlist.append(f)
             plt.show()
         return figlist
 
-    def plot_templ_seds_d4000(self, redshifts=None, wlmin=None, wlmax=None, ymin=None, ymax=None):
+    def plot_templ_seds_d4000(
+        self, redshifts=None, wlmin=None, wlmax=None, ymin=None, ymax=None
+    ):
         if redshifts is None:
-            redshifts = jnp.linspace(self.config.zmin, self.config.zmax, 6, endpoint=True)
-        elif isinstance(redshifts, (int, float, jnp.float32, jnp.float64, np.float32, np.float64)):
+            redshifts = jnp.linspace(
+                self.config.zmin, self.config.zmax, 6, endpoint=True
+            )
+        elif isinstance(
+            redshifts, (int, float, jnp.float32, jnp.float64, np.float32, np.float64)
+        ):
             redshifts = jnp.array([redshifts])
         elif isinstance(redshifts, (list, tuple, np.ndarray)):
             redshifts = jnp.array(redshifts)
         else:
-            assert isinstance(redshifts, jnp.ndarray), "Please specify the redshift as a single value or a list, tuple, numpy array or jax array of values."
-        
+            assert isinstance(
+                redshifts, jnp.ndarray
+            ), "Please specify the redshift as a single value or a list, tuple, numpy array or jax array of values."
+
         if wlmin is None:
-            wlmin=self.config.wlmin
+            wlmin = self.config.wlmin
         if wlmax is None:
-            wlmax=self.config.wlmax+self.config.dwl
+            wlmax = self.config.wlmax + self.config.dwl
 
         wls, transm_arr = self._load_filters()
         templ_pars = jnp.array(self.templates_df[_DUMMY_PARS.PARAM_NAMES_FLAT])
         templ_zref = jnp.array(self.templates_df[self.config.redshift_col])
         sspdata = load_ssp(
-            os.path.abspath(
-                os.path.join(
-                    self.data_path,
-                    "SSP",
-                    self.config.ssp_file
-                )
-            )
+            os.path.abspath(os.path.join(self.data_path, "SSP", self.config.ssp_file))
         )
         if "sps" in self.config.templ_type.lower():
             restframe_fnus = lsunPerHz_to_fnu_noU(
-                vmap_mean_spectrum_nodust(wls, templ_pars, redshifts, sspdata),
-                0.001
+                vmap_mean_spectrum_nodust(wls, templ_pars, redshifts, sspdata), 0.001
             )
             d4000n = v_d4000n(templ_pars, redshifts, sspdata)
-            _selnorm = jnp.logical_and(wls>=3950, wls<=4000)
+            _selnorm = jnp.logical_and(wls >= 3950, wls <= 4000)
             norms = jnp.nanmean(restframe_fnus[:, :, _selnorm], axis=2)
-            restframe_fnus = restframe_fnus/jnp.expand_dims(jnp.squeeze(norms), 2)
+            restframe_fnus = restframe_fnus / jnp.expand_dims(jnp.squeeze(norms), 2)
         else:
             _vspec = vmap(mean_spectrum_nodust, in_axes=(None, 0, 0, None))
             _vd4k = vmap(calc_d4000n, in_axes=(0, 0, None))
             restframe_fnus = lsunPerHz_to_fnu_noU(
-                _vspec(wls, templ_pars, templ_zref, sspdata),
-                0.001
+                _vspec(wls, templ_pars, templ_zref, sspdata), 0.001
             )
             d4000n = _vd4k(templ_pars, templ_zref, sspdata)
-            _selnorm = jnp.logical_and(wls>=3950, wls<=4000)
+            _selnorm = jnp.logical_and(wls >= 3950, wls <= 4000)
             norms = jnp.nanmean(restframe_fnus[:, _selnorm], axis=1)
-            restframe_fnus = restframe_fnus/jnp.expand_dims(jnp.squeeze(norms), 1)
-        rbmap = mpl.colormaps['coolwarm']
+            restframe_fnus = restframe_fnus / jnp.expand_dims(jnp.squeeze(norms), 1)
+        rbmap = mpl.colormaps["coolwarm"]
         cNorm = mpl.colors.Normalize(vmin=d4000n.min(), vmax=d4000n.max())
         d4map = mpl.cm.ScalarMappable(norm=cNorm, cmap=rbmap)
         d4cols = d4map.to_rgba(d4000n)
@@ -1896,31 +2049,37 @@ class ShireInformer(CatInformer):
         filtcols = plt.cm.rainbow(np.linspace(0, 1, transm_arr.shape[0]))
         figlist = []
         for iz, z in enumerate(redshifts):
-            f, a = plt.subplots(1,1, figsize=(7, 4), constrained_layout=True)
+            f, a = plt.subplots(1, 1, figsize=(7, 4), constrained_layout=True)
             if "sps" in self.config.templ_type.lower():
-                for fnu, col in zip(restframe_fnus[:, iz, :], d4cols[:, iz, :], strict=True):
+                for fnu, col in zip(
+                    restframe_fnus[:, iz, :], d4cols[:, iz, :], strict=True
+                ):
                     a.plot(*convert_flux_toobsframe(wls, fnu, z), c=tuple(col))
             else:
                 for fnu, col in zip(restframe_fnus, d4cols, strict=True):
                     a.plot(*convert_flux_toobsframe(wls, fnu, z), c=tuple(col))
-            plt.colorbar(d4map, ax=a, label='D4000')
-            a.set_xlabel(r'Observed wavelength $\mathrm{[\AA]}$')
-            a.set_ylabel(r'Normalized Spectral Energy Density [-]') #$\mathrm{[erg.s^{-1}.cm^{-2}.Hz^{-1}]}$')
+            plt.colorbar(d4map, ax=a, label="D4000")
+            a.set_xlabel(r"Observed wavelength $\mathrm{[\AA]}$")
+            a.set_ylabel(
+                r"Normalized Spectral Energy Density [-]"
+            )  # $\mathrm{[erg.s^{-1}.cm^{-2}.Hz^{-1}]}$')
             aa = a.twinx()
             for trans, fcol in zip(transm_arr, filtcols, strict=True):
                 aa.plot(wls, trans, c=tuple(fcol), lw=1)
                 aa.fill_between(wls, trans, alpha=0.3, color=tuple(fcol), lw=1)
-            aa.set_ylabel(r'Filter transmission / effective area [- / $\mathrm{m^2}$]')
-            #a.set_xscale('log')
-            a.set_yscale('log')
+            aa.set_ylabel(r"Filter transmission / effective area [- / $\mathrm{m^2}$]")
+            # a.set_xscale('log')
+            a.set_yscale("log")
             a.set_xlim(wlmin, wlmax)
             if ymin is not None and ymax is not None:
                 a.set_ylim(ymin, ymax)
             a.set_xlim(wlmin, wlmax)
             a.grid()
-            a.set_title(r'SED templates at $z=$'+f"{z:.2f}")
-            secax = a.secondary_xaxis('top', functions=(lambda wl: wl/(1+z), lambda wl: wl*(1+z)))
-            secax.set_xlabel(r'Resframe wavelength $\mathrm{[\AA]}$')
+            a.set_title(r"SED templates at $z=$" + f"{z:.2f}")
+            secax = a.secondary_xaxis(
+                "top", functions=(lambda wl: wl / (1 + z), lambda wl: wl * (1 + z))
+            )
+            secax.set_xlabel(r"Resframe wavelength $\mathrm{[\AA]}$")
             figlist.append(f)
             plt.show()
         return figlist
@@ -1938,9 +2097,11 @@ class ShireInformer(CatInformer):
             else:
                 print("Specified key not found in the templates dataframe's index.")
         pars = jnp.array(subdf[_DUMMY_PARS.PARAM_NAMES_FLAT].values, dtype=jnp.float64)
-        zref = subdf[self.config.redshift_col] #.iloc[0, self.config.redshift_col]
+        zref = subdf[self.config.redshift_col]  # .iloc[0, self.config.redshift_col]
         z = zref if redshift is None else redshift
-        lines = jnp.array([3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29])
+        lines = jnp.array(
+            [3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29]
+        )
         lines_names = [
             "SF_[OII]_3728.48_REW",
             "Balmer_HI_4862.68_REW",
@@ -1948,41 +2109,58 @@ class ShireInformer(CatInformer):
             "SF_[OI]_6302.046_REW",
             "Balmer_HI_6564.61_REW",
             "AGN_[NII]_6585.27_REW",
-            "AGN_[SII]_6718.29_REW"
+            "AGN_[SII]_6718.29_REW",
         ]
         line_wids = lines * 400 / C_KMS / 2
         cont_wids = lines * 15000 / C_KMS / 2
 
         sspdata = load_ssp(
-            os.path.abspath(
-                os.path.join(
-                    self.data_path,
-                    "SSP",
-                    self.config.ssp_file
-                )
-            )
+            os.path.abspath(os.path.join(self.data_path, "SSP", self.config.ssp_file))
         )
 
-        wls = jnp.arange(3500., 7000., 0.1)
-        sed = mean_spectrum(wls, pars, z, sspdata) if "sps" in self.config.templ_type.lower() else mean_spectrum(wls, pars, zref, sspdata)
+        wls = jnp.arange(3500.0, 7000.0, 0.1)
+        sed = (
+            mean_spectrum(wls, pars, z, sspdata)
+            if "sps" in self.config.templ_type.lower()
+            else mean_spectrum(wls, pars, zref, sspdata)
+        )
         eqws = vmap_calc_eqw(wls, sed, lines)
         fnu = lsunPerHz_to_fnu_noU(sed, 0.001)
 
         for il, lin in enumerate(lines):
-            f, a = plt.subplots(1,1)
-            sel = jnp.logical_and(wls>=lin-1.5*cont_wids[il], wls<=lin+1.5*cont_wids[il])
-            a.plot(wls[sel], fnu[sel], ls='-', color='k', label=subdf['name'])
-            a.axvline(lin-cont_wids[il], ls=':', color='orange', label="Continuum bounds")
-            a.axvline(lin+cont_wids[il], ls=':', color='orange')
-            a.axvline(lin-line_wids[il], ls=':', color='r', label="Line bounds")
-            a.axvline(lin+line_wids[il], ls=':', color='r')
-            a.axvline(lin, ls='-', color='g', label=lines_names[il])
-            a.fill_between(wls[sel], fnu[sel], where=np.logical_and(wls[sel]>lin-0.5*eqws[il], wls[sel]<lin+0.5*eqws[il]), color='g', alpha=0.5, label=r"REW $=$"+f"{eqws[il]:.2f}"+r"$\mathrm{\AA}$")
-            a.set_xlabel(r'Restframe wavelength $\mathrm{[\AA]}$')
-            a.set_ylabel(r'*Spectral Energy Density $\mathrm{[erg.s^{-1}.cm^{-2}.Hz^{-1}]}$')
+            f, a = plt.subplots(1, 1)
+            sel = jnp.logical_and(
+                wls >= lin - 1.5 * cont_wids[il], wls <= lin + 1.5 * cont_wids[il]
+            )
+            a.plot(wls[sel], fnu[sel], ls="-", color="k", label=subdf["name"])
+            a.axvline(
+                lin - cont_wids[il], ls=":", color="orange", label="Continuum bounds"
+            )
+            a.axvline(lin + cont_wids[il], ls=":", color="orange")
+            a.axvline(lin - line_wids[il], ls=":", color="r", label="Line bounds")
+            a.axvline(lin + line_wids[il], ls=":", color="r")
+            a.axvline(lin, ls="-", color="g", label=lines_names[il])
+            a.fill_between(
+                wls[sel],
+                fnu[sel],
+                where=np.logical_and(
+                    wls[sel] > lin - 0.5 * eqws[il], wls[sel] < lin + 0.5 * eqws[il]
+                ),
+                color="g",
+                alpha=0.5,
+                label=r"REW $=$" + f"{eqws[il]:.2f}" + r"$\mathrm{\AA}$",
+            )
+            a.set_xlabel(r"Restframe wavelength $\mathrm{[\AA]}$")
+            a.set_ylabel(
+                r"*Spectral Energy Density $\mathrm{[erg.s^{-1}.cm^{-2}.Hz^{-1}]}$"
+            )
             a.legend()
-            a.set_title(f"Restframe Equivalent Width of {lines_names[il]} for template {subdf['name']} at "+r"$z=$"+f"{z:.2f}")
+            a.set_title(
+                f"Restframe Equivalent Width of {lines_names[il]} for template {subdf['name']} at "
+                + r"$z=$"
+                + f"{z:.2f}"
+            )
             plt.show()
             figlist.append(f)
-        
+
         return figlist

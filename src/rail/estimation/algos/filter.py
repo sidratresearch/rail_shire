@@ -1,15 +1,14 @@
 #!/bin/env python3
 
 import os
-
 from collections import namedtuple
 
 import jax.numpy as jnp
 import numpy as np
+from interpax import interp1d
 from jax import jit
 from sedpy import observate
 from tqdm import tqdm
-from interpax import interp1d
 
 try:
     from jax.numpy import trapezoid
@@ -66,31 +65,24 @@ def get_sedpy(filter_dict, wls, data_path="."):
     filts_tup = []
     val_sedpy = observate.list_available_filters()
     print("Loading filters:")
-    for _if, (fnam, fdir) in tqdm(enumerate(filter_dict.items()), total=len(filter_dict)):
+    for _if, (fnam, fdir) in tqdm(
+        enumerate(filter_dict.items()), total=len(filter_dict)
+    ):
         if fdir == "" or fdir is None:
-            assert fnam in val_sedpy, f"Filter {_if} ({fnam}) is not available.\
+            assert (
+                fnam in val_sedpy
+            ), f"Filter {_if} ({fnam}) is not available.\
                 \nPlease provide path to an ASCII file with transmission table or use one of : {val_sedpy}."
             _filt = observate.Filter(fnam)
         else:
-            fdir = os.path.abspath(
-                os.path.join(
-                    data_path,
-                    "FILTER",
-                    fdir
-                )
-            )
+            fdir = os.path.abspath(os.path.join(data_path, "FILTER", fdir))
             _filt = observate.Filter(fnam, directory=fdir)
         filts_tup.append(_filt)
 
     transm_arr = jnp.array(
         [
-            interp1d(
-                wls,
-                _f.wavelength,
-                _f.transmission,
-                method="akima",
-                extrap=0.0
-            ) for _f in filts_tup
+            interp1d(wls, _f.wavelength, _f.transmission, method="akima", extrap=0.0)
+            for _f in filts_tup
         ]
     )
     return transm_arr
@@ -159,7 +151,11 @@ def transform(wls, trans, trans_type):
     :rtype: tuple(float, array)
     """
     mean_wl = lambda_mean(wls, trans)
-    new_trans = jnp.array(trans * wls / mean_wl) if trans_type.lower() == "photons" and mean_wl > 0.0 else trans
+    new_trans = (
+        jnp.array(trans * wls / mean_wl)
+        if trans_type.lower() == "photons" and mean_wl > 0.0
+        else trans
+    )
     return mean_wl, new_trans
 
 
@@ -225,12 +221,19 @@ def noJit_get_properties(filtwave, filttransm):
     wave_average = i2 / i3  # noqa: F841
     rectangular_width = i3 / jnp.max(filttransm)  # noqa: F841
 
-    i4 = trapezoid(filttransm * jnp.power((jnp.log(filtwave / wave_effective)), 2.0), x=jnp.log(filtwave))
+    i4 = trapezoid(
+        filttransm * jnp.power((jnp.log(filtwave / wave_effective)), 2.0),
+        x=jnp.log(filtwave),
+    )
     gauss_width = jnp.power((i4 / i1), 0.5)
-    effective_width = 2.0 * jnp.sqrt(2.0 * jnp.log(2.0)) * gauss_width * wave_effective  # noqa: F841
+    effective_width = (
+        2.0 * jnp.sqrt(2.0 * jnp.log(2.0)) * gauss_width * wave_effective
+    )  # noqa: F841
 
     # Get zero points and AB to Vega conversion
-    ab_zero_counts = obj_counts_hires(filtwave, filttransm, filtwave, ab_gnu * lightspeed / filtwave**2)
+    ab_zero_counts = obj_counts_hires(
+        filtwave, filttransm, filtwave, ab_gnu * lightspeed / filtwave**2
+    )
     return ab_zero_counts
 
 
@@ -258,12 +261,19 @@ def get_properties(filtwave, filttransm):
     wave_average = i2 / i3  # noqa: F841
     rectangular_width = i3 / jnp.max(filttransm)  # noqa: F841
 
-    i4 = trapezoid(filttransm * jnp.power((jnp.log(filtwave / wave_effective)), 2.0), x=jnp.log(filtwave))
+    i4 = trapezoid(
+        filttransm * jnp.power((jnp.log(filtwave / wave_effective)), 2.0),
+        x=jnp.log(filtwave),
+    )
     gauss_width = jnp.power((i4 / i1), 0.5)
-    effective_width = 2.0 * jnp.sqrt(2.0 * jnp.log(2.0)) * gauss_width * wave_effective  # noqa: F841
+    effective_width = (
+        2.0 * jnp.sqrt(2.0 * jnp.log(2.0)) * gauss_width * wave_effective
+    )  # noqa: F841
 
     # Get zero points and AB to Vega conversion
-    ab_zero_counts = obj_counts_hires(filtwave, filttransm, filtwave, ab_gnu * lightspeed / filtwave**2)
+    ab_zero_counts = obj_counts_hires(
+        filtwave, filttransm, filtwave, ab_gnu * lightspeed / filtwave**2
+    )
     return ab_zero_counts
 
     """
@@ -310,7 +320,9 @@ def noJit_obj_counts_hires(filtwave, filt_trans, sourcewave, sourceflux):
         Detector signal(s).
     """
     # Interpolate filter transmission to source spectrum
-    newtrans = jnp.interp(sourcewave, filtwave, filt_trans, left=0.0, right=0.0, period=None)
+    newtrans = jnp.interp(
+        sourcewave, filtwave, filt_trans, left=0.0, right=0.0, period=None
+    )
 
     # Integrate lambda*f_lambda*R
     counts = trapezoid(sourcewave * newtrans * sourceflux, x=sourcewave)
@@ -335,7 +347,9 @@ def obj_counts_hires(filtwave, filt_trans, sourcewave, sourceflux):
         Detector signal(s).
     """
     # Interpolate filter transmission to source spectrum
-    newtrans = jnp.interp(sourcewave, filtwave, filt_trans, left=0.0, right=0.0, period=None)
+    newtrans = jnp.interp(
+        sourcewave, filtwave, filt_trans, left=0.0, right=0.0, period=None
+    )
 
     # Integrate lambda*f_lambda*R
     counts = trapezoid(sourcewave * newtrans * sourceflux, x=sourcewave)
@@ -385,6 +399,7 @@ def ab_mag(filtwave, filt_trans, sourcewave, sourceflux):
     ab_zero_counts = get_properties(filtwave, filt_trans)
     counts = obj_counts_hires(filtwave, filt_trans, sourcewave, sourceflux)
     return -2.5 * jnp.log10(counts / ab_zero_counts)
+
 
 '''
 @jit

@@ -10,20 +10,22 @@ Created on Thu Aug 1 12:59:33 2024
 
 from functools import partial
 
-#import jax
-import pandas as pd
 import numpy as np
-from jax import jit, vmap
-from jax.tree_util import tree_map
-from jax import numpy as jnp
 
+# import jax
+import pandas as pd
 from diffmah.defaults import DiffmahParams
 from diffstar import calc_sfh_singlegal  # sfh_singlegal
 from diffstar.defaults import DiffstarUParams  # , DEFAULT_Q_PARAMS
-from rail.dsps import calc_obs_mag, calc_rest_mag, DEFAULT_COSMOLOGY, age_at_z
 from dsps.cosmology import age_at_z0
 from dsps.dust.att_curves import _frac_transmission_from_k_lambda, sbl18_k_lambda
 from interpax import interp1d
+from jax import jit
+from jax import numpy as jnp
+from jax import vmap
+from jax.tree_util import tree_map
+from rail.dsps import DEFAULT_COSMOLOGY, age_at_z, calc_obs_mag, calc_rest_mag
+
 try:
     from jax.numpy import trapezoid
 except ImportError:
@@ -32,12 +34,12 @@ except ImportError:
     except ImportError:
         from jax.numpy import trapz as trapezoid
 
-from .met_weights_age_dep import calc_rest_sed_sfh_table_lognormal_mdf_agedep
+from .analysis import _DUMMY_PARS, C_KMS, lsunPerHz_to_flam_noU
+from .filter import D4000b_filt, D4000r_filt, NIR_filt, NUV_filt
 from .io_utils import istuple
-from .analysis import C_KMS, lsunPerHz_to_flam_noU, _DUMMY_PARS
-from .filter import NUV_filt, NIR_filt, D4000b_filt, D4000r_filt
+from .met_weights_age_dep import calc_rest_sed_sfh_table_lognormal_mdf_agedep
 
-#jax.config.update("jax_enable_x64", True)
+# jax.config.update("jax_enable_x64", True)
 
 TODAY_GYR = age_at_z0(*DEFAULT_COSMOLOGY)  # 13.8
 T_ARR = jnp.linspace(0.1, TODAY_GYR, 100)
@@ -87,7 +89,9 @@ def ssp_spectrum_fromparam(params, z_obs, ssp_data):
     # compute the SFR
     # need age of universe when the light was emitted
     t_obs = age_at_z(z_obs, *DEFAULT_COSMOLOGY)  # age of the universe in Gyr at z_obs
-    t_obs = t_obs[0]  # age_at_z function returns an array, but SED functions accept a float for this argument
+    t_obs = t_obs[
+        0
+    ]  # age_at_z function returns an array, but SED functions accept a float for this argument
 
     gal_sfr_table = mean_sfr(params)
 
@@ -98,7 +102,15 @@ def ssp_spectrum_fromparam(params, z_obs, ssp_data):
 
     # compute the SED_info object
     sed_info = calc_rest_sed_sfh_table_lognormal_mdf_agedep(
-        T_ARR, gal_sfr_table, gal_lgmet_young, gal_lgmet_old, gal_lgmet_scatter, ssp_data.ssp_lgmet, ssp_data.ssp_lg_age_gyr, ssp_data.ssp_flux, t_obs
+        T_ARR,
+        gal_sfr_table,
+        gal_lgmet_young,
+        gal_lgmet_old,
+        gal_lgmet_scatter,
+        ssp_data.ssp_lgmet,
+        ssp_data.ssp_lg_age_gyr,
+        ssp_data.ssp_flux,
+        t_obs,
     )
     # dust attenuation parameters
     Av = params.at[13].get()
@@ -171,7 +183,9 @@ def mean_spectrum_nodust(wls, params, z_obs, ssp_data):
 
 
 vmap_mean_spectrum_nodust_zo = vmap(mean_spectrum_nodust, in_axes=(None, None, 0, None))
-vmap_mean_spectrum_nodust = vmap(vmap_mean_spectrum_nodust_zo, in_axes=(None, 0, None, None))
+vmap_mean_spectrum_nodust = vmap(
+    vmap_mean_spectrum_nodust_zo, in_axes=(None, 0, None, None)
+)
 
 
 @partial(vmap, in_axes=(None, None, None, 0, None))
@@ -191,7 +205,9 @@ def vmap_calc_obs_mag(ssp_wave, sed_attenuated, wls, filt_trans_arr, z_obs):
     :return: _description_
     :rtype: _type_
     """
-    return calc_obs_mag(ssp_wave, sed_attenuated, wls, filt_trans_arr, z_obs, *DEFAULT_COSMOLOGY)
+    return calc_obs_mag(
+        ssp_wave, sed_attenuated, wls, filt_trans_arr, z_obs, *DEFAULT_COSMOLOGY
+    )
 
 
 @partial(vmap, in_axes=(None, None, None, 0))
@@ -232,7 +248,9 @@ def mean_mags(params, wls, filt_trans_arr, z_obs, ssp_data):
     # get the restframe spectra without and with dust attenuation
     ssp_wave, _, sed_attenuated = ssp_spectrum_fromparam(params, z_obs, ssp_data)
 
-    mags_predictions = vmap_calc_obs_mag(ssp_wave, sed_attenuated, wls, filt_trans_arr, z_obs)
+    mags_predictions = vmap_calc_obs_mag(
+        ssp_wave, sed_attenuated, wls, filt_trans_arr, z_obs
+    )
     # mags_predictions = tree_map(
     #    lambda trans : calc_obs_mag(
     #        ssp_wave,
@@ -323,9 +341,20 @@ def calc_eqw(sur_wls, sur_spec, lin):
     line_wid = lin * 400 / C_KMS / 2
     cont_wid = lin * 15000 / C_KMS / 2
     sur_flam = lsunPerHz_to_flam_noU(sur_wls, sur_spec, 0.001)
-    nancont = jnp.where(jnp.logical_or(jnp.logical_and(sur_wls > lin - cont_wid, sur_wls < lin - line_wid), jnp.logical_and(sur_wls > lin + line_wid, sur_wls < lin + cont_wid)), sur_flam, jnp.nan)
+    nancont = jnp.where(
+        jnp.logical_or(
+            jnp.logical_and(sur_wls > lin - cont_wid, sur_wls < lin - line_wid),
+            jnp.logical_and(sur_wls > lin + line_wid, sur_wls < lin + cont_wid),
+        ),
+        sur_flam,
+        jnp.nan,
+    )
     height = jnp.nanmean(nancont)
-    vals = jnp.where(jnp.logical_and(sur_wls > lin - line_wid, sur_wls < lin + line_wid), sur_flam / height - 1.0, 0.0)
+    vals = jnp.where(
+        jnp.logical_and(sur_wls > lin - line_wid, sur_wls < lin + line_wid),
+        sur_flam / height - 1.0,
+        0.0,
+    )
     ew = trapezoid(vals, x=sur_wls)
     return ew
 
@@ -360,10 +389,14 @@ def templ_mags(params, wls, filt_trans_arr, z_obs, av, ssp_data):
     _mags = vmap_calc_obs_mag(ssp_wave, sed_attenuated, wls, filt_trans_arr, z_obs)
     _nuvk = jnp.array(
         [
-            calc_rest_mag(ssp_wave, sed_attenuated, NUV_filt.wavelength, NUV_filt.transmission),
-            calc_rest_mag(ssp_wave, sed_attenuated, NIR_filt.wavelength, NIR_filt.transmission)
+            calc_rest_mag(
+                ssp_wave, sed_attenuated, NUV_filt.wavelength, NUV_filt.transmission
+            ),
+            calc_rest_mag(
+                ssp_wave, sed_attenuated, NIR_filt.wavelength, NIR_filt.transmission
+            ),
         ]
-    ) #NUV-K shall not include dust attenuation - Perhaps yes in fact?
+    )  # NUV-K shall not include dust attenuation - Perhaps yes in fact?
 
     mags_predictions = jnp.concatenate((_mags, _nuvk))
 
@@ -446,18 +479,22 @@ def calc_nuvk(pars_arr, z_obs, ssp_data):
     :return: _description_
     :rtype: _type_
     """
-    #sed = mean_spectrum_nodust(wls, pars_arr, z_obs, ssp_data)
-    
+    # sed = mean_spectrum_nodust(wls, pars_arr, z_obs, ssp_data)
+
     # get the restframe spectra without and with dust attenuation
     ssp_wave, rest_sed, _ = ssp_spectrum_fromparam(pars_arr, z_obs, ssp_data)
     _nuvk = jnp.array(
         [
-            calc_rest_mag(ssp_wave, rest_sed, NUV_filt.wavelength, NUV_filt.transmission),
-            calc_rest_mag(ssp_wave, rest_sed, NIR_filt.wavelength, NIR_filt.transmission)
+            calc_rest_mag(
+                ssp_wave, rest_sed, NUV_filt.wavelength, NUV_filt.transmission
+            ),
+            calc_rest_mag(
+                ssp_wave, rest_sed, NIR_filt.wavelength, NIR_filt.transmission
+            ),
         ]
     )
 
-    return _nuvk[0]-_nuvk[1]
+    return _nuvk[0] - _nuvk[1]
 
 
 v_nuvk_zo = vmap(calc_nuvk, in_axes=(None, 0, None))
@@ -477,18 +514,22 @@ def calc_nuvk_dusty(pars_arr, z_obs, ssp_data):
     :return: _description_
     :rtype: _type_
     """
-    #sed = mean_spectrum(wls, pars_arr, z_obs, ssp_data)
-    
+    # sed = mean_spectrum(wls, pars_arr, z_obs, ssp_data)
+
     # get the restframe spectra without and with dust attenuation
     ssp_wave, _, sed_attenuated = ssp_spectrum_fromparam(pars_arr, z_obs, ssp_data)
     _nuvk = jnp.array(
         [
-            calc_rest_mag(ssp_wave, sed_attenuated, NUV_filt.wavelength, NUV_filt.transmission),
-            calc_rest_mag(ssp_wave, sed_attenuated, NIR_filt.wavelength, NIR_filt.transmission)
+            calc_rest_mag(
+                ssp_wave, sed_attenuated, NUV_filt.wavelength, NUV_filt.transmission
+            ),
+            calc_rest_mag(
+                ssp_wave, sed_attenuated, NIR_filt.wavelength, NIR_filt.transmission
+            ),
         ]
     )
 
-    return _nuvk[0]-_nuvk[1]
+    return _nuvk[0] - _nuvk[1]
 
 
 v_nuvk_zo_dusty = vmap(calc_nuvk_dusty, in_axes=(None, 0, None))
@@ -508,18 +549,22 @@ def calc_d4000n(pars_arr, z_obs, ssp_data):
     :return: _description_
     :rtype: _type_
     """
-    #sed = mean_spectrum_nodust(wls, pars_arr, z_obs, ssp_data)
-    
+    # sed = mean_spectrum_nodust(wls, pars_arr, z_obs, ssp_data)
+
     # get the restframe spectra without and with dust attenuation
     ssp_wave, rest_sed, _ = ssp_spectrum_fromparam(pars_arr, z_obs, ssp_data)
     d4000 = jnp.array(
         [
-            calc_rest_mag(ssp_wave, rest_sed, D4000b_filt.wavelength, D4000b_filt.transmission),
-            calc_rest_mag(ssp_wave, rest_sed, D4000r_filt.wavelength, D4000r_filt.transmission)
+            calc_rest_mag(
+                ssp_wave, rest_sed, D4000b_filt.wavelength, D4000b_filt.transmission
+            ),
+            calc_rest_mag(
+                ssp_wave, rest_sed, D4000r_filt.wavelength, D4000r_filt.transmission
+            ),
         ]
     )
 
-    return d4000[0]-d4000[1]
+    return d4000[0] - d4000[1]
 
 
 v_d4000n_zo = vmap(calc_d4000n, in_axes=(None, 0, None))
@@ -539,68 +584,117 @@ def calc_d4000n_dusty(pars_arr, z_obs, ssp_data):
     :return: _description_
     :rtype: _type_
     """
-    #sed = mean_spectrum(wls, pars_arr, z_obs, ssp_data)
-    
+    # sed = mean_spectrum(wls, pars_arr, z_obs, ssp_data)
+
     # get the restframe spectra without and with dust attenuation
     ssp_wave, _, sed_attenuated = ssp_spectrum_fromparam(pars_arr, z_obs, ssp_data)
     d4000 = jnp.array(
         [
-            calc_rest_mag(ssp_wave, sed_attenuated, D4000b_filt.wavelength, D4000b_filt.transmission),
-            calc_rest_mag(ssp_wave, sed_attenuated, D4000r_filt.wavelength, D4000r_filt.transmission)
+            calc_rest_mag(
+                ssp_wave,
+                sed_attenuated,
+                D4000b_filt.wavelength,
+                D4000b_filt.transmission,
+            ),
+            calc_rest_mag(
+                ssp_wave,
+                sed_attenuated,
+                D4000r_filt.wavelength,
+                D4000r_filt.transmission,
+            ),
         ]
     )
 
-    return d4000[0]-d4000[1]
+    return d4000[0] - d4000[1]
 
 
 v_d4000n_zo_dusty = vmap(calc_d4000n_dusty, in_axes=(None, 0, None))
 v_d4000n_dusty = vmap(v_d4000n_zo_dusty, in_axes=(0, None, None))
 
+
 def treemap_d4000_noav(pars_arr, z_obs, ssp_data):
     templ_tupl = [tuple(_pars) for _pars in pars_arr]
-    reslist_of_tupl = tree_map(lambda partup: v_d4000n_zo_dusty(jnp.array(partup), z_obs, ssp_data), templ_tupl, is_leaf=istuple)
+    reslist_of_tupl = tree_map(
+        lambda partup: v_d4000n_zo_dusty(jnp.array(partup), z_obs, ssp_data),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     return reslist_of_tupl
 
+
 def treemap_d4000_noav_leg(pars_arr, zref, ssp_data):
-    templ_tupl = [tuple(_pars)+tuple([z]) for _pars, z in zip(pars_arr, zref, strict=True)]
-    reslist_of_tupl = tree_map(lambda partup: calc_d4000n_dusty(jnp.array(partup[:-1]), partup[-1], ssp_data), templ_tupl, is_leaf=istuple)
+    templ_tupl = [
+        tuple(_pars) + tuple([z]) for _pars, z in zip(pars_arr, zref, strict=True)
+    ]
+    reslist_of_tupl = tree_map(
+        lambda partup: calc_d4000n_dusty(jnp.array(partup[:-1]), partup[-1], ssp_data),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     return reslist_of_tupl
+
 
 @jit
 def d4000n(pars_arr, z_obs, av, ssp_data):
     _pars = pars_arr.at[13].set(av)
-    #sed = mean_spectrum(wls, _pars, z_obs, ssp_data)
+    # sed = mean_spectrum(wls, _pars, z_obs, ssp_data)
     # get the restframe spectra without and with dust attenuation
     ssp_wave, _, sed_attenuated = ssp_spectrum_fromparam(_pars, z_obs, ssp_data)
     d4000 = jnp.array(
         [
-            calc_rest_mag(ssp_wave, sed_attenuated, D4000b_filt.wavelength, D4000b_filt.transmission),
-            calc_rest_mag(ssp_wave, sed_attenuated, D4000r_filt.wavelength, D4000r_filt.transmission)
+            calc_rest_mag(
+                ssp_wave,
+                sed_attenuated,
+                D4000b_filt.wavelength,
+                D4000b_filt.transmission,
+            ),
+            calc_rest_mag(
+                ssp_wave,
+                sed_attenuated,
+                D4000r_filt.wavelength,
+                D4000r_filt.transmission,
+            ),
         ]
     )
 
-    return d4000[0]-d4000[1]
+    return d4000[0] - d4000[1]
+
 
 vmap_d4000n_av = vmap(d4000n, in_axes=(None, None, 0, None))
 vmap_d4000n_zob = vmap(vmap_d4000n_av, in_axes=(None, 0, None, None))
 vmap_d4000n_pars = vmap(vmap_d4000n_zob, in_axes=(0, None, None, None))
 
+
 def treemap_d4000(pars_arr, z_obs, av, ssp_data):
     templ_tupl = [tuple(_pars) for _pars in pars_arr]
-    reslist_of_tupl = tree_map(lambda partup: vmap_d4000n_zob(jnp.array(partup), z_obs, av, ssp_data), templ_tupl, is_leaf=istuple)
+    reslist_of_tupl = tree_map(
+        lambda partup: vmap_d4000n_zob(jnp.array(partup), z_obs, av, ssp_data),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     return reslist_of_tupl
+
 
 vmap_d4000n_pars_leg = vmap(vmap_d4000n_av, in_axes=(0, 0, None, None))
 
+
 def treemap_d4000_leg(pars_arr, zref, av, ssp_data):
-    templ_tupl = [tuple(_pars)+tuple([z]) for _pars, z in zip(pars_arr, zref, strict=True)]
-    reslist_of_tupl = tree_map(lambda partup: vmap_d4000n_av(jnp.array(partup[:-1]), partup[-1], av, ssp_data), templ_tupl, is_leaf=istuple)
+    templ_tupl = [
+        tuple(_pars) + tuple([z]) for _pars, z in zip(pars_arr, zref, strict=True)
+    ]
+    reslist_of_tupl = tree_map(
+        lambda partup: vmap_d4000n_av(jnp.array(partup[:-1]), partup[-1], av, ssp_data),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     return reslist_of_tupl
+
 
 def get_colors_templates(params, wls, z_obs, transm_arr, ssp_data):
     ssp_wave, _, sed_attenuated = ssp_spectrum_fromparam(params, z_obs, ssp_data)
     _mags = vmap_calc_obs_mag(ssp_wave, sed_attenuated, wls, transm_arr, z_obs)
-    return _mags[:-1]-_mags[1:]
+    return _mags[:-1] - _mags[1:]
+
 
 vmap_cols_zo = vmap(get_colors_templates, in_axes=(None, None, 0, None, None))
 vmap_cols_templ = vmap(vmap_cols_zo, in_axes=(0, None, None, None, None))
@@ -609,27 +703,40 @@ vmap_cols_templ = vmap(vmap_cols_zo, in_axes=(0, None, None, None, None))
 def get_colors_templates_nodust(params, wls, z_obs, transm_arr, ssp_data):
     ssp_wave, sed, _ = ssp_spectrum_fromparam(params, z_obs, ssp_data)
     _mags = vmap_calc_obs_mag(ssp_wave, sed, wls, transm_arr, z_obs)
-    return _mags[:-1]-_mags[1:]
+    return _mags[:-1] - _mags[1:]
 
-vmap_cols_zo_nodust = vmap(get_colors_templates_nodust, in_axes=(None, None, 0, None, None))
+
+vmap_cols_zo_nodust = vmap(
+    get_colors_templates_nodust, in_axes=(None, None, 0, None, None)
+)
 vmap_cols_templ_nodust = vmap(vmap_cols_zo_nodust, in_axes=(0, None, None, None, None))
+
 
 def get_colors_templates_leg(params, wls, z_obs, z_ref, transm_arr, ssp_data):
     ssp_wave, _, sed_attenuated = ssp_spectrum_fromparam(params, z_ref, ssp_data)
     _mags = vmap_calc_obs_mag(ssp_wave, sed_attenuated, wls, transm_arr, z_obs)
-    return _mags[:-1]-_mags[1:]
+    return _mags[:-1] - _mags[1:]
 
-vmap_cols_zo_leg = vmap(get_colors_templates_leg, in_axes=(None, None, 0, None, None, None))
+
+vmap_cols_zo_leg = vmap(
+    get_colors_templates_leg, in_axes=(None, None, 0, None, None, None)
+)
 vmap_cols_templ_leg = vmap(vmap_cols_zo_leg, in_axes=(0, None, None, 0, None, None))
 
 
 def get_colors_templates_nodust_leg(params, wls, z_obs, z_ref, transm_arr, ssp_data):
     ssp_wave, sed, _ = ssp_spectrum_fromparam(params, z_ref, ssp_data)
     _mags = vmap_calc_obs_mag(ssp_wave, sed, wls, transm_arr, z_obs)
-    return _mags[:-1]-_mags[1:]
+    return _mags[:-1] - _mags[1:]
 
-vmap_cols_zo_nodust_leg = vmap(get_colors_templates_nodust_leg, in_axes=(None, None, 0, None, None, None))
-vmap_cols_templ_nodust_leg = vmap(vmap_cols_zo_nodust_leg, in_axes=(0, None, None, 0, None, None))
+
+vmap_cols_zo_nodust_leg = vmap(
+    get_colors_templates_nodust_leg, in_axes=(None, None, 0, None, None, None)
+)
+vmap_cols_templ_nodust_leg = vmap(
+    vmap_cols_zo_nodust_leg, in_axes=(0, None, None, 0, None, None)
+)
+
 
 def make_sps_templates(params_arr, wls, transm_arr, redz_arr, av_arr, ssp_data):
     """make_sps_templates Creates the set of templates for photo-z estimation, using DSPS to syntheticize the photometry from a set of input parameters.
@@ -653,12 +760,20 @@ def make_sps_templates(params_arr, wls, transm_arr, redz_arr, av_arr, ssp_data):
     # nuvk = template_mags[:, :, :, -2] - template_mags[:, :, :, -1]
     # colors = template_mags[:, :, :, :-3] - template_mags[:, :, :, 1:-2]
     templ_tupl = [tuple(_pars) for _pars in params_arr]
-    reslist_of_tupl = tree_map(lambda partup: vmap_clrs_zobs(jnp.array(partup), wls, transm_arr, redz_arr, av_arr, ssp_data), templ_tupl, is_leaf=istuple)
+    reslist_of_tupl = tree_map(
+        lambda partup: vmap_clrs_zobs(
+            jnp.array(partup), wls, transm_arr, redz_arr, av_arr, ssp_data
+        ),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     # colors, nuvk = vmap_clrs_pars(params_arr, wls, transm_arr, redz_arr, anu_arr, ssp_data)
     return reslist_of_tupl
 
 
-def make_sps_itemplates(params_arr, wls, transm_arr, redz_arr, av_arr, ssp_data, id_imag=3):
+def make_sps_itemplates(
+    params_arr, wls, transm_arr, redz_arr, av_arr, ssp_data, id_imag=3
+):
     """make_sps_itemplates Creates the set of templates for photo-z estimation, using DSPS to syntheticize the photometry from a set of input parameters.
 
     :param params_arr: Model parameters as output by DSPS
@@ -683,7 +798,13 @@ def make_sps_itemplates(params_arr, wls, transm_arr, redz_arr, av_arr, ssp_data,
     # nuvk = template_mags[:, :, :, -2] - template_mags[:, :, :, -1]
     # colors = template_mags[:, :, :, :-2] - i_mag
     templ_tupl = [tuple(_pars) for _pars in params_arr]
-    reslist_of_tupl = tree_map(lambda partup: vmap_iclrs_zobs(jnp.array(partup), wls, transm_arr, redz_arr, av_arr, ssp_data, id_imag), templ_tupl, is_leaf=istuple)
+    reslist_of_tupl = tree_map(
+        lambda partup: vmap_iclrs_zobs(
+            jnp.array(partup), wls, transm_arr, redz_arr, av_arr, ssp_data, id_imag
+        ),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     # colors, nuvk = vmap_iclrs_pars(params_arr, wls, transm_arr, redz_arr, anu_arr, ssp_data, id_imag)
     return reslist_of_tupl
 
@@ -707,14 +828,20 @@ def templ_mags_noav(params, wls, filt_trans_arr, z_obs, ssp_data):
     :rtype: 1D JAX-array of floats of length (nb bands+2)
     """
     # get the restframe spectra without and with dust attenuation
-    ssp_wave, sed_restf, sed_attenuated = ssp_spectrum_fromparam(params, z_obs, ssp_data)
+    ssp_wave, sed_restf, sed_attenuated = ssp_spectrum_fromparam(
+        params, z_obs, ssp_data
+    )
     _mags = vmap_calc_obs_mag(ssp_wave, sed_attenuated, wls, filt_trans_arr, z_obs)
     _nuvk = jnp.array(
         [
-            calc_rest_mag(ssp_wave, sed_attenuated, NUV_filt.wavelength, NUV_filt.transmission),
-            calc_rest_mag(ssp_wave, sed_attenuated, NIR_filt.wavelength, NIR_filt.transmission)
+            calc_rest_mag(
+                ssp_wave, sed_attenuated, NUV_filt.wavelength, NUV_filt.transmission
+            ),
+            calc_rest_mag(
+                ssp_wave, sed_attenuated, NIR_filt.wavelength, NIR_filt.transmission
+            ),
         ]
-    ) #NUV-K shall not include dust attenuation - Perhaps yes in fact?
+    )  # NUV-K shall not include dust attenuation - Perhaps yes in fact?
 
     mags_predictions = jnp.concatenate((_mags, _nuvk))
 
@@ -748,6 +875,7 @@ def templ_clrs_nuvk_noav(params, wls, filt_trans_arr, z_obs, ssp_data):
 vmap_clrs_noav_zobs = vmap(templ_clrs_nuvk_noav, in_axes=(None, None, None, 0, None))
 vmap_clrs_noav_pars = vmap(vmap_clrs_noav_zobs, in_axes=(0, None, None, None, None))
 
+
 def make_sps_templates_noav(params_arr, wls, transm_arr, redz_arr, ssp_data):
     """make_sps_templates Creates the set of templates for photo-z estimation, using DSPS to syntheticize the photometry from a set of input parameters.
 
@@ -768,9 +896,16 @@ def make_sps_templates_noav(params_arr, wls, transm_arr, redz_arr, ssp_data):
     # nuvk = template_mags[:, :, :, -2] - template_mags[:, :, :, -1]
     # colors = template_mags[:, :, :, :-3] - template_mags[:, :, :, 1:-2]
     templ_tupl = [tuple(_pars) for _pars in params_arr]
-    reslist_of_tupl = tree_map(lambda partup: vmap_clrs_noav_zobs(jnp.array(partup), wls, transm_arr, redz_arr, ssp_data), templ_tupl, is_leaf=istuple)
+    reslist_of_tupl = tree_map(
+        lambda partup: vmap_clrs_noav_zobs(
+            jnp.array(partup), wls, transm_arr, redz_arr, ssp_data
+        ),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     # colors, nuvk = vmap_clrs_pars(params_arr, wls, transm_arr, redz_arr, anu_arr, ssp_data)
     return reslist_of_tupl
+
 
 @jit
 def templ_mags_legacy(params, z_ref, wls, filt_trans_arr, z_obs, av, ssp_data):
@@ -800,19 +935,29 @@ def templ_mags_legacy(params, z_ref, wls, filt_trans_arr, z_obs, av, ssp_data):
     _mags = vmap_calc_obs_mag(ssp_wave, sed_attenuated, wls, filt_trans_arr, z_obs)
     _nuvk = jnp.array(
         [
-            calc_rest_mag(ssp_wave, sed_attenuated, NUV_filt.wavelength, NUV_filt.transmission),
-            calc_rest_mag(ssp_wave, sed_attenuated, NIR_filt.wavelength, NIR_filt.transmission)
+            calc_rest_mag(
+                ssp_wave, sed_attenuated, NUV_filt.wavelength, NUV_filt.transmission
+            ),
+            calc_rest_mag(
+                ssp_wave, sed_attenuated, NIR_filt.wavelength, NIR_filt.transmission
+            ),
         ]
-    ) # NUV-K shall not include dust attenuation -- Perhaps in fact yes
+    )  # NUV-K shall not include dust attenuation -- Perhaps in fact yes
 
     mags_predictions = jnp.concatenate((_mags, _nuvk))
 
     return mags_predictions
 
 
-vmap_mags_av_legacy = vmap(templ_mags_legacy, in_axes=(None, None, None, None, None, 0, None))
-vmap_mags_zobs_legacy = vmap(vmap_mags_av_legacy, in_axes=(None, None, None, None, 0, None, None))
-vmap_mags_pars_legacy = vmap(vmap_mags_zobs_legacy, in_axes=(0, 0, None, None, None, None, None))
+vmap_mags_av_legacy = vmap(
+    templ_mags_legacy, in_axes=(None, None, None, None, None, 0, None)
+)
+vmap_mags_zobs_legacy = vmap(
+    vmap_mags_av_legacy, in_axes=(None, None, None, None, 0, None, None)
+)
+vmap_mags_pars_legacy = vmap(
+    vmap_mags_zobs_legacy, in_axes=(0, 0, None, None, None, None, None)
+)
 
 
 def templ_clrs_nuvk_legacy(params, z_ref, wls, filt_trans_arr, z_obs, av, ssp_data):
@@ -839,12 +984,20 @@ def templ_clrs_nuvk_legacy(params, z_ref, wls, filt_trans_arr, z_obs, av, ssp_da
     return _mags[:-3] - _mags[1:-2], _mags[-2] - _mags[-1]
 
 
-vmap_clrs_av_legacy = vmap(templ_clrs_nuvk_legacy, in_axes=(None, None, None, None, None, 0, None))
-vmap_clrs_zobs_legacy = vmap(vmap_clrs_av_legacy, in_axes=(None, None, None, None, 0, None, None))
-vmap_clrs_pars_legacy = vmap(vmap_clrs_zobs_legacy, in_axes=(0, 0, None, None, None, None, None))
+vmap_clrs_av_legacy = vmap(
+    templ_clrs_nuvk_legacy, in_axes=(None, None, None, None, None, 0, None)
+)
+vmap_clrs_zobs_legacy = vmap(
+    vmap_clrs_av_legacy, in_axes=(None, None, None, None, 0, None, None)
+)
+vmap_clrs_pars_legacy = vmap(
+    vmap_clrs_zobs_legacy, in_axes=(0, 0, None, None, None, None, None)
+)
 
 
-def templ_iclrs_nuvk_legacy(params, z_ref, wls, filt_trans_arr, z_obs, av, ssp_data, id_imag):
+def templ_iclrs_nuvk_legacy(
+    params, z_ref, wls, filt_trans_arr, z_obs, av, ssp_data, id_imag
+):
     """Return the photometric color indices for the given filters transmission
     :param params: Model parameters
     :type params: Dictionnary of parameters
@@ -870,12 +1023,20 @@ def templ_iclrs_nuvk_legacy(params, z_ref, wls, filt_trans_arr, z_obs, av, ssp_d
     return _mags[:-2] - _mags[id_imag], _mags[-2] - _mags[-1]
 
 
-vmap_iclrs_av_legacy = vmap(templ_iclrs_nuvk_legacy, in_axes=(None, None, None, None, None, 0, None, None))
-vmap_iclrs_zobs_legacy = vmap(vmap_iclrs_av_legacy, in_axes=(None, None, None, None, 0, None, None, None))
-vmap_iclrs_pars_legacy = vmap(vmap_iclrs_zobs_legacy, in_axes=(0, 0, None, None, None, None, None, None))
+vmap_iclrs_av_legacy = vmap(
+    templ_iclrs_nuvk_legacy, in_axes=(None, None, None, None, None, 0, None, None)
+)
+vmap_iclrs_zobs_legacy = vmap(
+    vmap_iclrs_av_legacy, in_axes=(None, None, None, None, 0, None, None, None)
+)
+vmap_iclrs_pars_legacy = vmap(
+    vmap_iclrs_zobs_legacy, in_axes=(0, 0, None, None, None, None, None, None)
+)
 
 
-def make_legacy_templates(params_arr, zref_arr, wls, transm_arr, redz_arr, av_arr, ssp_data):
+def make_legacy_templates(
+    params_arr, zref_arr, wls, transm_arr, redz_arr, av_arr, ssp_data
+):
     """make_legacy_templates Creates the set of templates for photo-z estimation, using DSPS to syntheticize the photometry from a set of input parameters.
 
     :param params_arr: Model parameters as output by DSPS
@@ -898,8 +1059,22 @@ def make_legacy_templates(params_arr, zref_arr, wls, transm_arr, redz_arr, av_ar
     # template_mags = vmap_mags_pars_legacy(params_arr, zref_arr, wls, transm_arr, redz_arr, av_arr, ssp_data)
     # nuvk = template_mags[:, :, :, -2] - template_mags[:, :, :, -1]
     # colors = template_mags[:, :, :, :-3] - template_mags[:, :, :, 1:-2]
-    templ_tupl = [tuple(_pars) + tuple([z]) for _pars, z in zip(params_arr, zref_arr, strict=True)]
-    reslist_of_tupl = tree_map(lambda partup: vmap_clrs_zobs_legacy(jnp.array(partup[:-1]), partup[-1], wls, transm_arr, redz_arr, av_arr, ssp_data), templ_tupl, is_leaf=istuple)
+    templ_tupl = [
+        tuple(_pars) + tuple([z]) for _pars, z in zip(params_arr, zref_arr, strict=True)
+    ]
+    reslist_of_tupl = tree_map(
+        lambda partup: vmap_clrs_zobs_legacy(
+            jnp.array(partup[:-1]),
+            partup[-1],
+            wls,
+            transm_arr,
+            redz_arr,
+            av_arr,
+            ssp_data,
+        ),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     # colors, nuvk = vmap_clrs_pars_legacy(params_arr, zref_arr, wls, transm_arr, redz_arr, anu_arr, ssp_data)
     return reslist_of_tupl
 
@@ -925,22 +1100,32 @@ def templ_mags_noav_legacy(params, z_ref, wls, filt_trans_arr, z_obs, ssp_data):
 
     """
     # get the restframe spectra without and with dust attenuation
-    ssp_wave, sed_restf, sed_attenuated = ssp_spectrum_fromparam(params, z_ref, ssp_data)
+    ssp_wave, sed_restf, sed_attenuated = ssp_spectrum_fromparam(
+        params, z_ref, ssp_data
+    )
     _mags = vmap_calc_obs_mag(ssp_wave, sed_attenuated, wls, filt_trans_arr, z_obs)
     _nuvk = jnp.array(
         [
-            calc_rest_mag(ssp_wave, sed_attenuated, NUV_filt.wavelength, NUV_filt.transmission),
-            calc_rest_mag(ssp_wave, sed_attenuated, NIR_filt.wavelength, NIR_filt.transmission)
+            calc_rest_mag(
+                ssp_wave, sed_attenuated, NUV_filt.wavelength, NUV_filt.transmission
+            ),
+            calc_rest_mag(
+                ssp_wave, sed_attenuated, NIR_filt.wavelength, NIR_filt.transmission
+            ),
         ]
-    ) # NUV-K shall not include dust attenuation -- Perhaps in fact yes
+    )  # NUV-K shall not include dust attenuation -- Perhaps in fact yes
 
     mags_predictions = jnp.concatenate((_mags, _nuvk))
 
     return mags_predictions
 
 
-vmap_mags_noav_zobs_legacy = vmap(templ_mags_noav_legacy, in_axes=(None, None, None, None, 0, None))
-vmap_mags_noav_pars_legacy = vmap(vmap_mags_noav_zobs_legacy, in_axes=(0, 0, None, None, None, None))
+vmap_mags_noav_zobs_legacy = vmap(
+    templ_mags_noav_legacy, in_axes=(None, None, None, None, 0, None)
+)
+vmap_mags_noav_pars_legacy = vmap(
+    vmap_mags_noav_zobs_legacy, in_axes=(0, 0, None, None, None, None)
+)
 
 
 def templ_clrs_noav_nuvk_legacy(params, z_ref, wls, filt_trans_arr, z_obs, ssp_data):
@@ -965,10 +1150,17 @@ def templ_clrs_noav_nuvk_legacy(params, z_ref, wls, filt_trans_arr, z_obs, ssp_d
     return _mags[:-3] - _mags[1:-2], _mags[-2] - _mags[-1]
 
 
-vmap_clrs_noav_zobs_legacy = vmap(templ_clrs_noav_nuvk_legacy, in_axes=(None, None, None, None, 0, None))
-vmap_clrs_noav_pars_legacy = vmap(vmap_clrs_noav_zobs_legacy, in_axes=(0, 0, None, None, None, None))
+vmap_clrs_noav_zobs_legacy = vmap(
+    templ_clrs_noav_nuvk_legacy, in_axes=(None, None, None, None, 0, None)
+)
+vmap_clrs_noav_pars_legacy = vmap(
+    vmap_clrs_noav_zobs_legacy, in_axes=(0, 0, None, None, None, None)
+)
 
-def make_legacy_templates_noav(params_arr, zref_arr, wls, transm_arr, redz_arr, ssp_data):
+
+def make_legacy_templates_noav(
+    params_arr, zref_arr, wls, transm_arr, redz_arr, ssp_data
+):
     """make_legacy_templates Creates the set of templates for photo-z estimation, using DSPS to syntheticize the photometry from a set of input parameters.
 
     :param params_arr: Model parameters as output by DSPS
@@ -989,13 +1181,23 @@ def make_legacy_templates_noav(params_arr, zref_arr, wls, transm_arr, redz_arr, 
     # template_mags = vmap_mags_pars_legacy(params_arr, zref_arr, wls, transm_arr, redz_arr, av_arr, ssp_data)
     # nuvk = template_mags[:, :, :, -2] - template_mags[:, :, :, -1]
     # colors = template_mags[:, :, :, :-3] - template_mags[:, :, :, 1:-2]
-    templ_tupl = [tuple(_pars) + tuple([z]) for _pars, z in zip(params_arr, zref_arr, strict=True)]
-    reslist_of_tupl = tree_map(lambda partup: vmap_clrs_noav_zobs_legacy(jnp.array(partup[:-1]), partup[-1], wls, transm_arr, redz_arr, ssp_data), templ_tupl, is_leaf=istuple)
+    templ_tupl = [
+        tuple(_pars) + tuple([z]) for _pars, z in zip(params_arr, zref_arr, strict=True)
+    ]
+    reslist_of_tupl = tree_map(
+        lambda partup: vmap_clrs_noav_zobs_legacy(
+            jnp.array(partup[:-1]), partup[-1], wls, transm_arr, redz_arr, ssp_data
+        ),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     # colors, nuvk = vmap_clrs_pars_legacy(params_arr, zref_arr, wls, transm_arr, redz_arr, anu_arr, ssp_data)
     return reslist_of_tupl
 
 
-def make_legacy_itemplates(params_arr, zref_arr, wls, transm_arr, redz_arr, av_arr, ssp_data, id_imag=3):
+def make_legacy_itemplates(
+    params_arr, zref_arr, wls, transm_arr, redz_arr, av_arr, ssp_data, id_imag=3
+):
     """make_legacy_itemplates Creates the set of templates for photo-z estimation, using DSPS to syntheticize the photometry from a set of input parameters.
 
     :param params_arr: Model parameters as output by DSPS
@@ -1021,10 +1223,26 @@ def make_legacy_itemplates(params_arr, zref_arr, wls, transm_arr, redz_arr, av_a
     # i_mag = template_mags[:, :, :, id_imag]
     # nuvk = template_mags[:, :, :, -2] - template_mags[:, :, :, -1]
     # colors = template_mags[:, :, :, :-2] - i_mag
-    templ_tupl = [tuple(_pars) + tuple([z]) for _pars, z in zip(params_arr, zref_arr, strict=True)]
-    reslist_of_tupl = tree_map(lambda partup: vmap_iclrs_zobs_legacy(jnp.array(partup[:-1]), partup[-1], wls, transm_arr, redz_arr, av_arr, ssp_data, id_imag), templ_tupl, is_leaf=istuple)
+    templ_tupl = [
+        tuple(_pars) + tuple([z]) for _pars, z in zip(params_arr, zref_arr, strict=True)
+    ]
+    reslist_of_tupl = tree_map(
+        lambda partup: vmap_iclrs_zobs_legacy(
+            jnp.array(partup[:-1]),
+            partup[-1],
+            wls,
+            transm_arr,
+            redz_arr,
+            av_arr,
+            ssp_data,
+            id_imag,
+        ),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     # colors, nuvk = vmap_iclrs_pars_legacy(params_arr, zref_arr, wls, transm_arr, redz_arr, av_arr, ssp_data, id_imag)
     return reslist_of_tupl
+
 
 def lim_HII_comp(log_oi_ha):
     """
@@ -1227,84 +1445,132 @@ def Ke06_oi(log_oi_ha):
     """
     return 1.18 * log_oi_ha + 1.30
 
+
 @jit
 def bpt_rews_pars_zo(templ_pars, zobs, ssp_data):
-    _lines_wl = jnp.array([ 3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29 ])
+    _lines_wl = jnp.array(
+        [3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29]
+    )
     _wls = jnp.arange(3500.0, 7000.0, 0.1)
     templ_seds_zo = vmap_mean_spectrum_nodust_zo(_wls, templ_pars, zobs, ssp_data)
     rews_zo = vmap_eqw_sed(_wls, templ_seds_zo, _lines_wl)
     return rews_zo
 
+
 vmap_bpt_rews = vmap(bpt_rews_pars_zo, in_axes=(0, None, None))
+
 
 @jit
 def bpt_rews_pars_dusty(templ_pars, zobs, ssp_data):
-    _lines_wl = jnp.array([ 3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29 ])
+    _lines_wl = jnp.array(
+        [3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29]
+    )
     _wls = jnp.arange(3500.0, 7000.0, 0.1)
     templ_sed = mean_spectrum(_wls, templ_pars, zobs, ssp_data)
     rews = vmap_calc_eqw(_wls, templ_sed, _lines_wl)
     return rews
 
-    #templ_seds_zo = vmap_mean_spectrum_zo(_wls, templ_pars, zobs, ssp_data)
-    #rews_zo = vmap_eqw_sed(_wls, templ_seds_zo, _lines_wl)
-    #return rews_zo
+    # templ_seds_zo = vmap_mean_spectrum_zo(_wls, templ_pars, zobs, ssp_data)
+    # rews_zo = vmap_eqw_sed(_wls, templ_seds_zo, _lines_wl)
+    # return rews_zo
+
 
 vmap_bpt_rews_dusty_zo = vmap(bpt_rews_pars_dusty, in_axes=(None, 0, None))
 vmap_bpt_rews_dusty = vmap(vmap_bpt_rews_dusty_zo, in_axes=(0, None, None))
 
+
 def treemap_bpt_noav(templ_pars, zobs, ssp_data):
     templ_tupl = [tuple(_pars) for _pars in templ_pars]
-    reslist_of_tupl = tree_map(lambda partup: vmap_bpt_rews_dusty_zo(jnp.array(partup), zobs, ssp_data), templ_tupl, is_leaf=istuple)
+    reslist_of_tupl = tree_map(
+        lambda partup: vmap_bpt_rews_dusty_zo(jnp.array(partup), zobs, ssp_data),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     return reslist_of_tupl
 
+
 def treemap_bpt_noav_leg(templ_pars, zref, ssp_data):
-    templ_tupl = [tuple(_pars)+tuple([z]) for _pars, z in zip(templ_pars, zref, strict=True)]
-    reslist_of_tupl = tree_map(lambda partup: bpt_rews_pars_dusty(jnp.array(partup[:-1]), partup[-1], ssp_data), templ_tupl, is_leaf=istuple)
+    templ_tupl = [
+        tuple(_pars) + tuple([z]) for _pars, z in zip(templ_pars, zref, strict=True)
+    ]
+    reslist_of_tupl = tree_map(
+        lambda partup: bpt_rews_pars_dusty(
+            jnp.array(partup[:-1]), partup[-1], ssp_data
+        ),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     return reslist_of_tupl
+
 
 @jit
 def bpt_rews(templ_pars, zobs, av, ssp_data):
     _pars = templ_pars.at[13].set(av)
-    _lines_wl = jnp.array([ 3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29 ])
+    _lines_wl = jnp.array(
+        [3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29]
+    )
     _wls = jnp.arange(3500.0, 7000.0, 0.1)
     templ_sed = mean_spectrum(_wls, _pars, zobs, ssp_data)
     rews = vmap_calc_eqw(_wls, templ_sed, _lines_wl)
     return rews
 
+
 vmap_bpt_rews_av = vmap(bpt_rews, in_axes=(None, None, 0, None))
 vmap_bpt_rews_zob = vmap(vmap_bpt_rews_av, in_axes=(None, 0, None, None))
 vmap_bpt_rews_pars = vmap(vmap_bpt_rews_zob, in_axes=(0, None, None, None))
 
+
 def treemap_bpt(templ_pars, zobs, av, ssp_data):
     templ_tupl = [tuple(_pars) for _pars in templ_pars]
-    reslist_of_tupl = tree_map(lambda partup: vmap_bpt_rews_zob(jnp.array(partup), zobs, av, ssp_data), templ_tupl, is_leaf=istuple)
+    reslist_of_tupl = tree_map(
+        lambda partup: vmap_bpt_rews_zob(jnp.array(partup), zobs, av, ssp_data),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     return reslist_of_tupl
+
 
 vmap_bpt_rews_pars_leg = vmap(vmap_bpt_rews_av, in_axes=(0, 0, None, None))
 
+
 def treemap_bpt_leg(templ_pars, zref, av, ssp_data):
-    templ_tupl = [tuple(_pars)+tuple([z]) for _pars, z in zip(templ_pars, zref, strict=True)]
-    reslist_of_tupl = tree_map(lambda partup: vmap_bpt_rews_av(jnp.array(partup[:-1]), partup[-1], av, ssp_data), templ_tupl, is_leaf=istuple)
+    templ_tupl = [
+        tuple(_pars) + tuple([z]) for _pars, z in zip(templ_pars, zref, strict=True)
+    ]
+    reslist_of_tupl = tree_map(
+        lambda partup: vmap_bpt_rews_av(
+            jnp.array(partup[:-1]), partup[-1], av, ssp_data
+        ),
+        templ_tupl,
+        is_leaf=istuple,
+    )
     return reslist_of_tupl
 
 
 @jit
 def bpt_rews_pars_leg(templ_pars, zref, ssp_data):
-    _lines_wl = jnp.array([ 3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29 ])
+    _lines_wl = jnp.array(
+        [3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29]
+    )
     _wls = jnp.arange(3500.0, 7000.0, 0.1)
     templ_seds = mean_spectrum_nodust(_wls, templ_pars, zref, ssp_data)
     rews = vmap_calc_eqw(_wls, templ_seds, _lines_wl)
     return rews
 
+
 vmap_bpt_rews_leg = vmap(bpt_rews_pars_leg, in_axes=(0, 0, None))
+
 
 @jit
 def bpt_rews_pars_dusty_leg(templ_pars, zref, ssp_data):
-    _lines_wl = jnp.array([ 3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29 ])
+    _lines_wl = jnp.array(
+        [3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29]
+    )
     _wls = jnp.arange(3500.0, 7000.0, 0.1)
     templ_seds = mean_spectrum(_wls, templ_pars, zref, ssp_data)
     rews = vmap_calc_eqw(_wls, templ_seds, _lines_wl)
     return rews
+
 
 vmap_bpt_rews_dusty_leg = vmap(bpt_rews_pars_dusty_leg, in_axes=(0, 0, None))
 
@@ -1317,23 +1583,34 @@ def colrs_bptrews_templ_zo(templ_pars, wls, zobs, transm_arr, ssp_data):
     t_d4000n = v_d4000n_zo(templ_pars, zobs, ssp_data)
     return jnp.column_stack((t_colors, t_rews, t_nuvk, t_d4000n))
 
-vmap_colrs_bptrews_templ_zo = vmap(colrs_bptrews_templ_zo, in_axes=(0, None, None, None, None))
+
+vmap_colrs_bptrews_templ_zo = vmap(
+    colrs_bptrews_templ_zo, in_axes=(0, None, None, None, None)
+)
+
 
 @jit
 def colrs_bptrews_templ_zo_dusty(templ_pars, wls, zobs, transm_arr, ssp_data):
     t_rews = vmap_bpt_rews_dusty_zo(templ_pars, zobs, ssp_data)
     t_colors = vmap_cols_zo(templ_pars, wls, zobs, transm_arr, ssp_data)
-    t_nuvk = v_nuvk_zo_dusty(templ_pars, zobs, ssp_data) #v_nuvk_zo(templ_pars, wls, zobs, ssp_data) -- NUV-K for prior shall perhaps include dust attenuation
+    t_nuvk = v_nuvk_zo_dusty(
+        templ_pars, zobs, ssp_data
+    )  # v_nuvk_zo(templ_pars, wls, zobs, ssp_data) -- NUV-K for prior shall perhaps include dust attenuation
     t_d4000n = v_d4000n_zo_dusty(templ_pars, zobs, ssp_data)
     return jnp.column_stack((t_colors, t_rews, t_nuvk, t_d4000n))
 
-vmap_colrs_bptrews_templ_zo_dusty = vmap(colrs_bptrews_templ_zo_dusty, in_axes=(0, None, None, None, None))
+
+vmap_colrs_bptrews_templ_zo_dusty = vmap(
+    colrs_bptrews_templ_zo_dusty, in_axes=(0, None, None, None, None)
+)
 
 
 @jit
 def colrs_bptrews_templ_zo_leg(templ_pars, wls, zobs, zref, transm_arr, ssp_data):
     t_rews = bpt_rews_pars_leg(templ_pars, zref, ssp_data)
-    t_colors = vmap_cols_zo_nodust_leg(templ_pars, wls, zobs, zref, transm_arr, ssp_data)
+    t_colors = vmap_cols_zo_nodust_leg(
+        templ_pars, wls, zobs, zref, transm_arr, ssp_data
+    )
     t_nuvk = calc_nuvk(templ_pars, zref, ssp_data)
     t_d4000n = calc_d4000n(templ_pars, zref, ssp_data)
     return jnp.column_stack(
@@ -1341,31 +1618,40 @@ def colrs_bptrews_templ_zo_leg(templ_pars, wls, zobs, zref, transm_arr, ssp_data
             t_colors,
             jnp.full((t_colors.shape[0], t_rews.shape[0]), t_rews),
             jnp.full(t_colors.shape[0], t_nuvk),
-            jnp.full(t_colors.shape[0], t_d4000n)
+            jnp.full(t_colors.shape[0], t_d4000n),
         )
     )
 
-vmap_colrs_bptrews_templ_zo = vmap(colrs_bptrews_templ_zo_leg, in_axes=(0, None, None, 0, None, None))
+
+vmap_colrs_bptrews_templ_zo = vmap(
+    colrs_bptrews_templ_zo_leg, in_axes=(0, None, None, 0, None, None)
+)
+
 
 @jit
 def colrs_bptrews_templ_zo_dusty_leg(templ_pars, wls, zobs, zref, transm_arr, ssp_data):
     t_rews = bpt_rews_pars_dusty_leg(templ_pars, zref, ssp_data)
     t_colors = vmap_cols_zo_leg(templ_pars, wls, zobs, zref, transm_arr, ssp_data)
-    t_nuvk = calc_nuvk_dusty(templ_pars, zref, ssp_data) # calc_nuvk(templ_pars, wls, zref, ssp_data) # -- NUV-K for prior shall perhaps include dust attenuation
+    t_nuvk = calc_nuvk_dusty(
+        templ_pars, zref, ssp_data
+    )  # calc_nuvk(templ_pars, wls, zref, ssp_data) # -- NUV-K for prior shall perhaps include dust attenuation
     t_d4000n = calc_d4000n_dusty(templ_pars, zref, ssp_data)
     return jnp.column_stack(
         (
             t_colors,
             jnp.full((t_colors.shape[0], t_rews.shape[0]), t_rews),
             jnp.full(t_colors.shape[0], t_nuvk),
-            jnp.full(t_colors.shape[0], t_d4000n)
+            jnp.full(t_colors.shape[0], t_d4000n),
         )
     )
 
-vmap_colrs_bptrews_templ_zo_dusty = vmap(colrs_bptrews_templ_zo_dusty_leg, in_axes=(0, None, None, 0, None, None))
+
+vmap_colrs_bptrews_templ_zo_dusty = vmap(
+    colrs_bptrews_templ_zo_dusty_leg, in_axes=(0, None, None, 0, None, None)
+)
 
 
-def bpt_classif(templ_df, ssp_data, zkey='redshift', dusty=True):
+def bpt_classif(templ_df, ssp_data, zkey="redshift", dusty=True):
     """bpt_classif Use Restframe Equivalent Widths to provide an rudimentary classification of galaxies, using BPT diagrams as described in
     [Kewley et al., 2006](https://ui.adsabs.harvard.edu/abs/2006MNRAS.372..961K/abstract).
 
@@ -1380,13 +1666,19 @@ def bpt_classif(templ_df, ssp_data, zkey='redshift', dusty=True):
     :return: _description_
     :rtype: _type_
     """
-    _lines_wl = jnp.array([ 3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29 ])
+    _lines_wl = jnp.array(
+        [3728.48, 4862.68, 5008.24, 6302.046, 6564.61, 6585.27, 6718.29]
+    )
     _wls = jnp.arange(3500.0, 7000.0, 0.1)
 
     templ_pars = jnp.array(templ_df[_DUMMY_PARS.PARAM_NAMES_FLAT])
     zref = jnp.array(templ_df[zkey])
 
-    all_seds = vmap_mean_spectrum(_wls, templ_pars, zref, ssp_data) if dusty else vmap_mean_spectrum_nodust(_wls, templ_pars, zref, ssp_data)
+    all_seds = (
+        vmap_mean_spectrum(_wls, templ_pars, zref, ssp_data)
+        if dusty
+        else vmap_mean_spectrum_nodust(_wls, templ_pars, zref, ssp_data)
+    )
     all_REWs = vmap_eqw_sed(_wls, all_seds, _lines_wl)
     _lines_df = pd.DataFrame(
         index=templ_df.index,
@@ -1397,44 +1689,63 @@ def bpt_classif(templ_df, ssp_data, zkey='redshift', dusty=True):
             "SF_[OI]_6302.046_REW",
             "Balmer_HI_6564.61_REW",
             "AGN_[NII]_6585.27_REW",
-            "AGN_[SII]_6718.29_REW"
+            "AGN_[SII]_6718.29_REW",
         ],
-        data=all_REWs
+        data=all_REWs,
     )
     lines_df = templ_df.join(_lines_df)
 
     lines_df["log([OIII]/[Hb])"] = np.where(
-        np.logical_and(lines_df["AGN_[OIII]_5008.24_REW"] > 0.0,lines_df["Balmer_HI_4862.68_REW"] > 0.0),
-        np.log10(lines_df["AGN_[OIII]_5008.24_REW"] / lines_df["Balmer_HI_4862.68_REW"]),
-        np.nan
+        np.logical_and(
+            lines_df["AGN_[OIII]_5008.24_REW"] > 0.0,
+            lines_df["Balmer_HI_4862.68_REW"] > 0.0,
+        ),
+        np.log10(
+            lines_df["AGN_[OIII]_5008.24_REW"] / lines_df["Balmer_HI_4862.68_REW"]
+        ),
+        np.nan,
     )
 
     lines_df["log([NII]/[Ha])"] = np.where(
-        np.logical_and(lines_df["AGN_[NII]_6585.27_REW"] > 0.0, lines_df["Balmer_HI_6564.61_REW"] > 0.0),
+        np.logical_and(
+            lines_df["AGN_[NII]_6585.27_REW"] > 0.0,
+            lines_df["Balmer_HI_6564.61_REW"] > 0.0,
+        ),
         np.log10(lines_df["AGN_[NII]_6585.27_REW"] / lines_df["Balmer_HI_6564.61_REW"]),
-        np.nan
+        np.nan,
     )
 
     lines_df["log([SII]/[Ha])"] = np.where(
-        np.logical_and(lines_df["AGN_[SII]_6718.29_REW"] > 0.0, lines_df["Balmer_HI_6564.61_REW"] > 0.0),
+        np.logical_and(
+            lines_df["AGN_[SII]_6718.29_REW"] > 0.0,
+            lines_df["Balmer_HI_6564.61_REW"] > 0.0,
+        ),
         np.log10(lines_df["AGN_[SII]_6718.29_REW"] / lines_df["Balmer_HI_6564.61_REW"]),
-        np.nan
+        np.nan,
     )
 
     lines_df["log([OI]/[Ha])"] = np.where(
-        np.logical_and(lines_df["SF_[OI]_6302.046_REW"] > 0.0, lines_df["Balmer_HI_6564.61_REW"] > 0.0),
+        np.logical_and(
+            lines_df["SF_[OI]_6302.046_REW"] > 0.0,
+            lines_df["Balmer_HI_6564.61_REW"] > 0.0,
+        ),
         np.log10(lines_df["SF_[OI]_6302.046_REW"] / lines_df["Balmer_HI_6564.61_REW"]),
-        np.nan
+        np.nan,
     )
 
     lines_df["log([OIII]/[OII])"] = np.where(
-        np.logical_and(lines_df["AGN_[OIII]_5008.24_REW"] > 0.0, lines_df["SF_[OII]_3728.48_REW"] > 0),
+        np.logical_and(
+            lines_df["AGN_[OIII]_5008.24_REW"] > 0.0,
+            lines_df["SF_[OII]_3728.48_REW"] > 0,
+        ),
         np.log10(lines_df["AGN_[OIII]_5008.24_REW"] / lines_df["SF_[OII]_3728.48_REW"]),
-        np.nan
+        np.nan,
     )
 
     cat_nii = []
-    for x, y in zip(lines_df["log([NII]/[Ha])"], lines_df["log([OIII]/[Hb])"], strict=False):
+    for x, y in zip(
+        lines_df["log([NII]/[Ha])"], lines_df["log([OIII]/[Hb])"], strict=False
+    ):
         if not (np.isfinite(x) and np.isfinite(y)):
             cat_nii.append("NC")
         elif y < Ka03_nii(x):
@@ -1447,7 +1758,9 @@ def bpt_classif(templ_df, ssp_data, zkey='redshift', dusty=True):
     lines_df["CAT_NII"] = np.array(cat_nii)
 
     cat_sii = []
-    for x, y in zip(lines_df["log([SII]/[Ha])"], lines_df["log([OIII]/[Hb])"], strict=False):
+    for x, y in zip(
+        lines_df["log([SII]/[Ha])"], lines_df["log([OIII]/[Hb])"], strict=False
+    ):
         if not (np.isfinite(x) and np.isfinite(y)):
             cat_sii.append("NC")
         elif y < Ke01_sii(x):
@@ -1460,7 +1773,9 @@ def bpt_classif(templ_df, ssp_data, zkey='redshift', dusty=True):
     lines_df["CAT_SII"] = np.array(cat_sii)
 
     cat_oi = []
-    for x, y in zip(lines_df["log([OI]/[Ha])"], lines_df["log([OIII]/[Hb])"], strict=False):
+    for x, y in zip(
+        lines_df["log([OI]/[Ha])"], lines_df["log([OIII]/[Hb])"], strict=False
+    ):
         if not (np.isfinite(x) and np.isfinite(y)):
             cat_oi.append("NC")
         elif y < Ke01_oi(x):
@@ -1473,7 +1788,9 @@ def bpt_classif(templ_df, ssp_data, zkey='redshift', dusty=True):
     lines_df["CAT_OI"] = np.array(cat_oi)
 
     cat_oii = []
-    for x, y in zip(lines_df["log([OI]/[Ha])"], lines_df["log([OIII]/[OII])"], strict=False):
+    for x, y in zip(
+        lines_df["log([OI]/[Ha])"], lines_df["log([OIII]/[OII])"], strict=False
+    ):
         if not (np.isfinite(x) and np.isfinite(y)):
             cat_oii.append("NC")
         elif y < lim_HII_comp(x):
